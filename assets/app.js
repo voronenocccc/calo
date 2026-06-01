@@ -10,20 +10,26 @@ const CONFIG = {
 };
 
 const $app = document.querySelector("#app");
-const todayKey = () => {
-  const d = new Date();
+const dateToKey = (d) => {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+const todayKey = () => dateToKey(new Date());
 const state = loadState();
+let selectedDateKey = state.selectedDateKey || todayKey();
+if (!state.account) {
+  state.account = telegramAccount();
+  saveState();
+}
 let activeTab = state.profile ? "home" : "profile";
 let remoteCache = [];
 
 function loadState() {
   const fallback = {
     profile: null,
+    account: telegramAccount(),
     diary: {},
     customFoods: [],
     settings: { aiEndpoint: CONFIG.aiEndpoint, foodEndpoint: CONFIG.foodEndpoint }
@@ -40,7 +46,19 @@ function loadState() {
 }
 
 function saveState() {
+  state.selectedDateKey = selectedDateKey;
   localStorage.setItem("elite_calorie_state", JSON.stringify(state));
+}
+
+function telegramAccount() {
+  const user = tg?.initDataUnsafe?.user;
+  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ");
+  return {
+    id: user?.id || "local",
+    name: fullName || user?.username || "Аккаунт EliteCalorie",
+    username: user?.username || "",
+    savedAt: new Date().toISOString()
+  };
 }
 
 function icon(id) {
@@ -52,9 +70,26 @@ function fmt(value) {
 }
 
 function byDate() {
-  const key = todayKey();
+  const key = selectedDateKey;
   state.diary[key] ||= [];
   return state.diary[key];
+}
+
+function selectedDate() {
+  const [year, month, day] = selectedDateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function weekDays() {
+  const current = selectedDate();
+  const monday = new Date(current);
+  const day = (current.getDay() + 6) % 7;
+  monday.setDate(current.getDate() - day);
+  return Array.from({ length: 7 }, (_, index) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + index);
+    return d;
+  });
 }
 
 function totals() {
@@ -96,7 +131,7 @@ function render() {
           <p>${state.profile ? goalLabel(state.profile.goal) : "персональный КБЖУ-трекер"}</p>
         </div>
       </div>
-      <button class="pill" data-action="settings">AI</button>
+      <span class="pill account-pill">${escapeHtml(state.account?.name || "Аккаунт")}</span>
     </header>
     ${activeTab === "home" ? homeView(total, target, progress) : ""}
     ${activeTab === "search" ? searchView() : ""}
@@ -109,11 +144,12 @@ function render() {
 
 function homeView(total, target, progress) {
   const entries = byDate();
+  const current = selectedDate();
   return `
     <section class="hero">
       <div class="hero-head">
         <div>
-          <p class="eyebrow">Сегодня</p>
+          <p class="eyebrow">${selectedDateKey === todayKey() ? "Сегодня" : dayTitle(current)}</p>
           <h2>${fmt(total.kcal)} из ${fmt(target.kcal)} ккал</h2>
           <p class="hero-copy">${state.profile ? "Дневная цель обновляется после изменения анкеты." : "Заполни профиль, чтобы EliteCalorie рассчитал твою норму."}</p>
         </div>
@@ -129,14 +165,36 @@ function homeView(total, target, progress) {
     </section>
     <section class="section">
       <div class="section-title">
-        <div><h2>Дневник</h2><p>${entries.length ? `${entries.length} записей` : "пока пусто"}</p></div>
+        <div><h2>Дневник</h2><p>${dayTitle(current)} · ${entries.length ? `${entries.length} записей` : "пока пусто"}</p></div>
         <button class="pill" data-action="clear-day">Очистить</button>
+      </div>
+      <div class="day-strip">
+        ${weekDays().map(dayButton).join("")}
       </div>
       <div class="stack">
         ${entries.length ? entries.map(entryRow).join("") : `<div class="card empty">Добавь продукт, фото или свое блюдо.</div>`}
       </div>
     </section>
   `;
+}
+
+function dayButton(date) {
+  const key = dateToKey(date);
+  const labels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+  const label = labels[(date.getDay() + 6) % 7];
+  const count = (state.diary[key] || []).length;
+  return `
+    <button class="day-chip ${key === selectedDateKey ? "active" : ""}" data-day="${key}">
+      <span>${label}</span>
+      <strong>${date.getDate()}</strong>
+      ${count ? `<em>${count}</em>` : ""}
+    </button>
+  `;
+}
+
+function dayTitle(date) {
+  const labels = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
+  return `${labels[date.getDay()]}, ${date.getDate()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function macro(label, current, target, unit) {
@@ -174,18 +232,18 @@ function photoView() {
   return `
     <section class="section">
       <div class="section-title">
-        <div><h2>Фото тарелки</h2><p>оценка еды, порции и КБЖУ</p></div>
+        <div><h2>Фото</h2><p>тарелка, этикетка или таблица КБЖУ</p></div>
       </div>
       <div class="card photo-box">
         <div class="field">
-          <label>Фото блюда</label>
+          <label>Фото блюда или этикетки</label>
           <input id="photo-input" type="file" accept="image/*" />
         </div>
         <div class="field">
           <label>Уточнение</label>
-          <textarea id="photo-note" placeholder="Например: курица 150 г, гречка примерно половина тарелки"></textarea>
+          <textarea id="photo-note" placeholder="Например: съел 180 г; или курица 150 г, гречка половина тарелки"></textarea>
         </div>
-        <p class="mini-note">Для настоящего AI-анализа укажи защищенный AI endpoint в настройках. На GitHub Pages нельзя хранить OpenAI API key прямо в браузере.</p>
+        <p class="mini-note">Можно отправить тарелку, упаковку или этикетку. Если вес не очевиден, напиши граммовку в уточнении.</p>
         <button class="button" data-action="analyze-photo">Анализировать</button>
       </div>
       <div id="photo-result" class="stack section"></div>
@@ -208,6 +266,11 @@ function profileView() {
         <div><h2>Профиль</h2><p>EliteCalorie рассчитает норму КБЖУ</p></div>
       </div>
       <form id="profile-form" class="profile-panel stack">
+        <div class="account-card">
+          <span>Аккаунт</span>
+          <strong>${escapeHtml(state.account?.name || "Аккаунт EliteCalorie")}</strong>
+          <p>${state.account?.username ? `@${escapeHtml(state.account.username)}` : "Данные и дневник сохраняются на этом устройстве."}</p>
+        </div>
         <div class="form-grid">
           ${selectField("sex", "Пол", [["male", "Мужской"], ["female", "Женский"]], p.sex)}
           ${numberField("age", "Возраст", p.age, "28")}
@@ -234,13 +297,17 @@ function bind() {
     render();
   }));
 
-  document.querySelector("[data-action='settings']")?.addEventListener("click", openSettings);
   document.querySelector("[data-action='clear-day']")?.addEventListener("click", () => {
-    state.diary[todayKey()] = [];
+    state.diary[selectedDateKey] = [];
     saveState();
     render();
     toast("Дневник очищен");
   });
+  document.querySelectorAll("[data-day]").forEach(btn => btn.addEventListener("click", () => {
+    selectedDateKey = btn.dataset.day;
+    saveState();
+    render();
+  }));
 
   document.querySelectorAll("[data-action='delete-entry']").forEach(btn => btn.addEventListener("click", () => {
     byDate().splice(Number(btn.dataset.index), 1);
