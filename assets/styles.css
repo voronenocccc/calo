@@ -322,6 +322,7 @@ button {
 .food-row h3 {
   margin: 0;
   font-size: 15px;
+  color: #ffffff;
 }
 
 .entry-row p,
@@ -329,6 +330,11 @@ button {
   margin: 5px 0 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+.food-row,
+.entry-row {
+  color: var(--text);
 }
 
 .kcal-chip {

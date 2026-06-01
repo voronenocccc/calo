@@ -5,8 +5,8 @@ tg?.ready();
 tg?.expand();
 
 const CONFIG = {
-  aiEndpoint: localStorage.getItem("elite_ai_endpoint") || "",
-  foodEndpoint: localStorage.getItem("elite_food_endpoint") || ""
+  aiEndpoint: localStorage.getItem("elite_ai_endpoint") || "https://elitecalorie-ai.nikitosv2401.workers.dev/",
+  foodEndpoint: localStorage.getItem("elite_food_endpoint") || "https://elitecalorie-ai.nikitosv2401.workers.dev/food"
 };
 
 const $app = document.querySelector("#app");
@@ -29,7 +29,11 @@ function loadState() {
     settings: { aiEndpoint: CONFIG.aiEndpoint, foodEndpoint: CONFIG.foodEndpoint }
   };
   try {
-    return { ...fallback, ...JSON.parse(localStorage.getItem("elite_calorie_state") || "{}") };
+    const loaded = { ...fallback, ...JSON.parse(localStorage.getItem("elite_calorie_state") || "{}") };
+    loaded.settings ||= {};
+    loaded.settings.aiEndpoint ||= CONFIG.aiEndpoint;
+    loaded.settings.foodEndpoint ||= CONFIG.foodEndpoint;
+    return loaded;
   } catch {
     return fallback;
   }
