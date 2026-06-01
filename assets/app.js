@@ -423,6 +423,16 @@ async function analyzePhoto() {
 }
 
 function aiEstimateView(preview, estimate) {
+  if (estimate.error) {
+    const details = estimate.details?.error?.message || estimate.message || estimate.error;
+    return `
+      <img class="photo-preview" src="${preview}" alt="Фото блюда" />
+      <div class="card">
+        <h3>AI-анализ не сработал</h3>
+        <p class="mini-note">${escapeHtml(details)}</p>
+      </div>
+    `;
+  }
   if (estimate.question) {
     return `<img class="photo-preview" src="${preview}" alt="Фото блюда" /><div class="card">${escapeHtml(estimate.question)}</div>`;
   }
