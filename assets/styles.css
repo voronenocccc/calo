@@ -353,6 +353,66 @@ button {
   color: var(--green);
 }
 
+.meal-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.meal-chip {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  position: relative;
+}
+
+.meal-chip.active {
+  background: linear-gradient(135deg, rgba(70, 240, 162, 0.2), rgba(65, 215, 255, 0.12));
+  color: var(--green);
+  border-color: rgba(70, 240, 162, 0.42);
+}
+
+.meal-chip em {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  min-width: 17px;
+  height: 17px;
+  border-radius: 999px;
+  background: var(--cyan);
+  color: #06110d;
+  font-size: 10px;
+  font-style: normal;
+  display: grid;
+  place-items: center;
+}
+
+.meal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 2px 10px;
+}
+
+.meal-head span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.meal-head strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 18px;
+}
+
 .stack {
   display: grid;
   gap: 10px;
@@ -395,6 +455,34 @@ button {
   font-size: 12px;
 }
 
+.plan-card span {
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.plan-card h3 {
+  margin: 8px 0 6px;
+  font-size: 19px;
+}
+
+.plan-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.plan-card em {
+  display: block;
+  margin-top: 10px;
+  color: var(--amber);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
 .entry-row,
 .food-row {
   display: grid;
@@ -430,6 +518,70 @@ button {
   font-size: 12px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mini-action {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 900;
+  display: grid;
+  place-items: center;
+}
+
+.mini-action.danger {
+  color: #fff;
+  background: rgba(255, 111, 145, 0.16);
+  border-color: rgba(255, 111, 145, 0.26);
+}
+
+.library-rail {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 18px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.library-rail > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.library-rail strong {
+  color: var(--green);
+}
+
+.library-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.library-chip {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 9px 11px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .actions {
@@ -585,6 +737,68 @@ button {
   line-height: 1.45;
 }
 
+.calculation-screen {
+  min-height: calc(100vh - 120px);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+  gap: 16px;
+}
+
+.calc-orbit {
+  width: 132px;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(from 0deg, var(--green), var(--cyan), rgba(255, 255, 255, 0.08), var(--green));
+  animation: spin 1.4s linear infinite;
+}
+
+.calc-orbit .brand-mark {
+  animation: counter-spin 1.4s linear infinite;
+}
+
+.calculation-screen h2 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.calc-steps {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.calc-steps span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 10px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.calc-note {
+  max-width: 340px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes counter-spin {
+  to { transform: rotate(-360deg); }
+}
+
 @media (max-width: 420px) {
   .hero-head {
     grid-template-columns: 1fr;
@@ -597,5 +811,13 @@ button {
   .form-grid,
   .actions {
     grid-template-columns: 1fr;
+  }
+
+  .entry-row {
+    grid-template-columns: 1fr;
+  }
+
+  .entry-actions {
+    justify-content: flex-start;
   }
 }

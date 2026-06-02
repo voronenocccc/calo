@@ -9,6 +9,13 @@ const CONFIG = {
   foodEndpoint: localStorage.getItem("elite_food_endpoint") || "https://elitecalorie-ai.nikitosv2401.workers.dev/food"
 };
 
+const MEALS = [
+  ["breakfast", "Завтрак"],
+  ["lunch", "Обед"],
+  ["dinner", "Ужин"],
+  ["other", "Другое"]
+];
+
 const $app = document.querySelector("#app");
 const dateToKey = (d) => {
   const year = d.getFullYear();
@@ -19,6 +26,7 @@ const dateToKey = (d) => {
 const todayKey = () => dateToKey(new Date());
 const state = loadState();
 let selectedDateKey = state.selectedDateKey || todayKey();
+let selectedMeal = state.selectedMeal || "breakfast";
 if (!state.account) {
   state.account = telegramAccount();
   saveState();
@@ -32,6 +40,7 @@ function loadState() {
     account: telegramAccount(),
     diary: {},
     customFoods: [],
+    favoriteFoods: [],
     settings: { aiEndpoint: CONFIG.aiEndpoint, foodEndpoint: CONFIG.foodEndpoint }
   };
   try {
@@ -39,6 +48,9 @@ function loadState() {
     loaded.settings ||= {};
     loaded.settings.aiEndpoint ||= CONFIG.aiEndpoint;
     loaded.settings.foodEndpoint ||= CONFIG.foodEndpoint;
+    loaded.customFoods ||= [];
+    loaded.favoriteFoods ||= [];
+    migrateDiary(loaded);
     return loaded;
   } catch {
     return fallback;
@@ -47,7 +59,24 @@ function loadState() {
 
 function saveState() {
   state.selectedDateKey = selectedDateKey;
+  state.selectedMeal = selectedMeal;
   localStorage.setItem("elite_calorie_state", JSON.stringify(state));
+}
+
+function migrateDiary(store) {
+  Object.keys(store.diary || {}).forEach((key) => {
+    if (Array.isArray(store.diary[key])) {
+      store.diary[key] = {
+        breakfast: [],
+        lunch: [],
+        dinner: [],
+        other: store.diary[key]
+      };
+    }
+    MEALS.forEach(([meal]) => {
+      store.diary[key][meal] ||= [];
+    });
+  });
 }
 
 function telegramAccount() {
@@ -71,8 +100,23 @@ function fmt(value) {
 
 function byDate() {
   const key = selectedDateKey;
-  state.diary[key] ||= [];
+  state.diary[key] ||= emptyDay();
   return state.diary[key];
+}
+
+function emptyDay() {
+  return { breakfast: [], lunch: [], dinner: [], other: [] };
+}
+
+function mealEntries(meal = selectedMeal) {
+  const day = byDate();
+  day[meal] ||= [];
+  return day[meal];
+}
+
+function allDayEntries(key = selectedDateKey) {
+  const day = state.diary[key] || emptyDay();
+  return MEALS.flatMap(([meal]) => day[meal] || []);
 }
 
 function selectedDate() {
@@ -93,7 +137,7 @@ function weekDays() {
 }
 
 function totals() {
-  return byDate().reduce((acc, item) => {
+  return allDayEntries().reduce((acc, item) => {
     acc.kcal += Number(item.kcal || 0);
     acc.protein += Number(item.protein || 0);
     acc.fat += Number(item.fat || 0);
@@ -110,12 +154,74 @@ function calcTargets(profile) {
   const sexOffset = profile.sex === "male" ? 5 : -161;
   const bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age + sexOffset;
   const activity = { low: 1.2, light: 1.375, moderate: 1.55, high: 1.725 }[profile.activity] || 1.2;
-  const goal = { lose: 0.85, keep: 1, gain: 1.12 }[profile.goal] || 1;
-  const kcal = Math.round(bmr * activity * goal);
-  const protein = Math.round(profile.weight * (profile.goal === "lose" ? 1.8 : 1.6));
-  const fat = Math.round(profile.weight * (profile.goal === "gain" ? 0.9 : 0.8));
+  const tdee = bmr * activity;
+  const plan = buildWeightPlan(profile, tdee);
+  const kcalFloor = profile.sex === "female" ? 1200 : 1500;
+  let kcal = Math.round(tdee + plan.dailyKcalDelta);
+  if (kcal < kcalFloor) {
+    kcal = kcalFloor;
+    plan.note = `${plan.note ? `${plan.note} ` : ""}Калории не опускаю ниже безопасного минимума ${kcalFloor} ккал.`;
+  }
+  const protein = Math.round(profile.weight * (plan.goal === "lose" ? 1.8 : 1.6));
+  const fat = Math.round(profile.weight * (plan.goal === "gain" ? 0.9 : 0.8));
   const carbs = Math.max(60, Math.round((kcal - protein * 4 - fat * 9) / 4));
+  profile.plan = plan;
   return { kcal, protein, fat, carbs };
+}
+
+function buildWeightPlan(profile, tdee) {
+  const current = Number(profile.weight || 0);
+  const target = Number(profile.targetWeight || current);
+  const requestedDays = Math.max(1, Math.round(Number(profile.planDays || 90)));
+  const diff = target - current;
+  let goal = profile.goal;
+  if (Math.abs(diff) >= 0.2) goal = diff < 0 ? "lose" : "gain";
+
+  if (Math.abs(diff) < 0.2 || goal === "keep") {
+    return {
+      goal: "keep",
+      targetWeight: target,
+      requestedDays,
+      planDays: requestedDays,
+      dailyKcalDelta: 0,
+      finishDate: futureDateKey(requestedDays),
+      note: "Цель похожа на поддержание, поэтому держим стабильную норму."
+    };
+  }
+
+  const absKg = Math.abs(diff);
+  const safeKgPerWeek = goal === "lose" ? Math.max(0.35, current * 0.01) : Math.max(0.2, current * 0.005);
+  const minDays = Math.ceil(absKg / (safeKgPerWeek / 7));
+  const maxDays = Math.max(minDays, 540);
+  let planDays = requestedDays;
+  let note = "";
+
+  if (requestedDays < minDays) {
+    planDays = minDays;
+    note = `Срок был слишком жестким, поставил безопасный минимум: ${minDays} дн.`;
+  } else if (requestedDays > maxDays) {
+    planDays = maxDays;
+    note = `Срок был слишком растянутым, поставил рабочий максимум: ${maxDays} дн.`;
+  }
+
+  const dailyKcalDelta = Math.round((diff * 7700) / planDays);
+  return {
+    goal,
+    targetWeight: target,
+    requestedDays,
+    planDays,
+    minDays,
+    maxDays,
+    dailyKcalDelta,
+    finishDate: futureDateKey(planDays),
+    note
+  };
+}
+
+function futureDateKey(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + Number(days || 0));
+  return dateToKey(d);
 }
 
 function render() {
@@ -143,8 +249,10 @@ function render() {
 }
 
 function homeView(total, target, progress) {
-  const entries = byDate();
+  const entries = mealEntries();
+  const totalEntries = allDayEntries().length;
   const current = selectedDate();
+  const mealLabel = MEALS.find(([meal]) => meal === selectedMeal)?.[1] || "Другое";
   return `
     <section class="hero">
       <div class="hero-head">
@@ -165,14 +273,24 @@ function homeView(total, target, progress) {
     </section>
     <section class="section">
       <div class="section-title">
-        <div><h2>Дневник</h2><p>${dayTitle(current)} · ${entries.length ? `${entries.length} записей` : "пока пусто"}</p></div>
+        <div><h2>Дневник</h2><p>${dayTitle(current)} · ${totalEntries ? `${totalEntries} записей` : "пока пусто"}</p></div>
         <button class="pill" data-action="clear-day">Очистить</button>
       </div>
       <div class="day-strip">
         ${weekDays().map(dayButton).join("")}
       </div>
+      <div class="meal-strip">
+        ${MEALS.map(mealButton).join("")}
+      </div>
+      <div class="meal-head">
+        <div>
+          <span>Сейчас открыт</span>
+          <strong>${mealLabel}</strong>
+        </div>
+        <button class="pill" data-action="copy-meal-tomorrow">На завтра</button>
+      </div>
       <div class="stack">
-        ${entries.length ? entries.map(entryRow).join("") : `<div class="card empty">Добавь продукт, фото или свое блюдо.</div>`}
+        ${entries.length ? entries.map((entry, index) => entryRow(entry, index, selectedMeal)).join("") : `<div class="card empty">В этом приеме пищи пока пусто.</div>`}
       </div>
     </section>
   `;
@@ -182,11 +300,21 @@ function dayButton(date) {
   const key = dateToKey(date);
   const labels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
   const label = labels[(date.getDay() + 6) % 7];
-  const count = (state.diary[key] || []).length;
+  const count = allDayEntries(key).length;
   return `
     <button class="day-chip ${key === selectedDateKey ? "active" : ""}" data-day="${key}">
       <span>${label}</span>
       <strong>${date.getDate()}</strong>
+      ${count ? `<em>${count}</em>` : ""}
+    </button>
+  `;
+}
+
+function mealButton([meal, label]) {
+  const count = (byDate()[meal] || []).length;
+  return `
+    <button class="meal-chip ${meal === selectedMeal ? "active" : ""}" data-meal-tab="${meal}">
+      <span>${label}</span>
       ${count ? `<em>${count}</em>` : ""}
     </button>
   `;
@@ -201,24 +329,37 @@ function macro(label, current, target, unit) {
   return `<div class="macro"><span>${label}</span><strong>${fmt(current)} / ${fmt(target)} ${unit}</strong></div>`;
 }
 
-function entryRow(item, index) {
+function entryRow(item, index, meal) {
   return `
     <article class="entry-row">
       <div>
         <h3>${escapeHtml(item.name)}</h3>
         <p>${fmt(item.grams)} г · Б ${fmt(item.protein)} · Ж ${fmt(item.fat)} · У ${fmt(item.carbs)}</p>
       </div>
-      <button class="kcal-chip" data-action="delete-entry" data-index="${index}">${fmt(item.kcal)} ккал</button>
+      <div class="entry-actions">
+        <span class="kcal-chip">${fmt(item.kcal)} ккал</span>
+        <button class="mini-action" data-action="copy-entry-tomorrow" data-meal="${meal}" data-index="${index}" title="Скопировать на завтра">↗</button>
+        <button class="mini-action danger" data-action="delete-entry" data-meal="${meal}" data-index="${index}" title="Удалить">×</button>
+      </div>
     </article>
   `;
 }
 
 function searchView() {
+  const library = state.customFoods || [];
   return `
     <section class="section">
       <div class="section-title">
-        <div><h2>Еда</h2><p>локальная база, свои продукты и внешний Food API</p></div>
+        <div><h2>Еда</h2><p>база продуктов и личная библиотека</p></div>
       </div>
+      ${library.length ? `
+        <div class="library-rail">
+          <div><span>Моя библиотека</span><strong>${library.length}</strong></div>
+          <div class="library-list">
+            ${library.slice(0, 8).map(food => `<button class="library-chip" data-food='${escapeAttr(JSON.stringify(food))}'>${escapeHtml(food.name)}</button>`).join("")}
+          </div>
+        </div>
+      ` : ""}
       <div class="searchbar">
         <div class="field"><input id="search" placeholder="Например: творог савушкин" autocomplete="off" /></div>
         <button class="icon-button" data-action="custom-food" title="Добавить продукт">${icon("i-plus")}</button>
@@ -253,17 +394,21 @@ function photoView() {
 
 function profileView() {
   const p = state.profile || {
+    accountName: state.account?.name || "Аккаунт EliteCalorie",
     sex: "male",
     age: 28,
     height: 178,
     weight: 72,
+    targetWeight: 68,
+    planDays: 90,
     activity: "low",
     goal: "lose"
   };
+  const plan = state.profile?.plan;
   return `
     <section class="section">
       <div class="section-title">
-        <div><h2>Профиль</h2><p>EliteCalorie рассчитает норму КБЖУ</p></div>
+        <div><h2>Аккаунт</h2><p>персональный план, цель и норма КБЖУ</p></div>
       </div>
       <form id="profile-form" class="profile-panel stack">
         <div class="account-card">
@@ -271,19 +416,35 @@ function profileView() {
           <strong>${escapeHtml(state.account?.name || "Аккаунт EliteCalorie")}</strong>
           <p>${state.account?.username ? `@${escapeHtml(state.account.username)}` : "Данные и дневник сохраняются на этом устройстве."}</p>
         </div>
+        <div class="field"><label>Имя аккаунта</label><input name="accountName" value="${escapeAttr(p.accountName || state.account?.name || "")}" placeholder="Ваше имя" required /></div>
         <div class="form-grid">
           ${selectField("sex", "Пол", [["male", "Мужской"], ["female", "Женский"]], p.sex)}
           ${numberField("age", "Возраст", p.age, "28")}
           ${numberField("height", "Рост, см", p.height, "178")}
-          ${numberField("weight", "Вес, кг", p.weight, "72")}
+          ${numberField("weight", "Текущий вес, кг", p.weight, "72")}
+          ${numberField("targetWeight", "Целевой вес, кг", p.targetWeight, "68")}
+          ${numberField("planDays", "Срок, дней", p.planDays, "90")}
           ${selectField("activity", "Активность", [["low", "Мало движения"], ["light", "1-3 тренировки"], ["moderate", "3-5 тренировок"], ["high", "Высокая"]], p.activity)}
           ${selectField("goal", "Цель", [["lose", "Снизить вес"], ["keep", "Поддерживать"], ["gain", "Набрать"]], p.goal)}
         </div>
         <button class="button">Сохранить и рассчитать</button>
       </form>
-      ${state.profile ? `<div class="card section"><h3>Твоя норма</h3><p class="mini-note">${targets().kcal} ккал · Б ${targets().protein} · Ж ${targets().fat} · У ${targets().carbs}</p></div>` : ""}
+      ${state.profile ? `
+        <div class="card section plan-card">
+          <span>Персональный план</span>
+          <h3>${targets().kcal} ккал · Б ${targets().protein} · Ж ${targets().fat} · У ${targets().carbs}</h3>
+          <p>${planSummary(plan)}</p>
+          ${plan?.note ? `<em>${escapeHtml(plan.note)}</em>` : ""}
+        </div>
+      ` : ""}
     </section>
   `;
+}
+
+function planSummary(plan) {
+  if (!plan) return "План появится после регистрации.";
+  const goal = goalLabel(plan.goal);
+  return `${goal}: цель ${fmt(plan.targetWeight)} кг за ${plan.planDays} дн., финиш ${plan.finishDate}.`;
 }
 
 function tabs() {
@@ -298,7 +459,7 @@ function bind() {
   }));
 
   document.querySelector("[data-action='clear-day']")?.addEventListener("click", () => {
-    state.diary[selectedDateKey] = [];
+    state.diary[selectedDateKey] = emptyDay();
     saveState();
     render();
     toast("Дневник очищен");
@@ -308,18 +469,57 @@ function bind() {
     saveState();
     render();
   }));
-
-  document.querySelectorAll("[data-action='delete-entry']").forEach(btn => btn.addEventListener("click", () => {
-    byDate().splice(Number(btn.dataset.index), 1);
+  document.querySelectorAll("[data-meal-tab]").forEach(btn => btn.addEventListener("click", () => {
+    selectedMeal = btn.dataset.mealTab;
     saveState();
     render();
   }));
+
+  document.querySelectorAll("[data-action='delete-entry']").forEach(btn => btn.addEventListener("click", () => {
+    const meal = btn.dataset.meal || selectedMeal;
+    byDate()[meal].splice(Number(btn.dataset.index), 1);
+    saveState();
+    render();
+  }));
+  document.querySelectorAll("[data-action='copy-entry-tomorrow']").forEach(btn => btn.addEventListener("click", () => {
+    const meal = btn.dataset.meal || selectedMeal;
+    const item = byDate()[meal][Number(btn.dataset.index)];
+    if (item) {
+      addEntryToDate(nextDateKey(selectedDateKey), meal, { ...item, id: crypto.randomUUID(), copiedFrom: selectedDateKey });
+      toast("Скопировано на завтра");
+    }
+  }));
+  document.querySelector("[data-action='copy-meal-tomorrow']")?.addEventListener("click", () => {
+    const entries = mealEntries();
+    if (!entries.length) {
+      toast("Нечего копировать");
+      return;
+    }
+    const tomorrow = nextDateKey(selectedDateKey);
+    entries.forEach((item) => addEntryToDate(tomorrow, selectedMeal, { ...item, id: crypto.randomUUID(), copiedFrom: selectedDateKey }));
+    toast("Прием пищи скопирован на завтра");
+  });
 
   document.querySelector("#profile-form")?.addEventListener("submit", saveProfile);
   document.querySelector("#search")?.addEventListener("input", debounce(runSearch, 220));
   document.querySelector("[data-action='custom-food']")?.addEventListener("click", openCustomFood);
   document.querySelector("[data-action='analyze-photo']")?.addEventListener("click", analyzePhoto);
+  document.querySelectorAll(".library-chip[data-food]").forEach(btn => btn.addEventListener("click", () => openAddFood(JSON.parse(btn.dataset.food))));
   if (activeTab === "search") runSearch();
+}
+
+function nextDateKey(key) {
+  const [year, month, day] = key.split("-").map(Number);
+  const d = new Date(year, month - 1, day);
+  d.setDate(d.getDate() + 1);
+  return dateToKey(d);
+}
+
+function addEntryToDate(dateKey, meal, entry) {
+  state.diary[dateKey] ||= emptyDay();
+  state.diary[dateKey][meal] ||= [];
+  state.diary[dateKey][meal].unshift(entry);
+  saveState();
 }
 
 async function runSearch() {
@@ -371,13 +571,16 @@ function openAddFood(food) {
     <div class="section-title"><div><h2>${escapeHtml(food.name)}</h2><p>${escapeHtml(food.brand || food.source || "")}</p></div></div>
     <form id="add-food-form" class="stack">
       ${numberField("grams", "Сколько граммов", 100, "100")}
+      ${selectField("meal", "Прием пищи", MEALS, selectedMeal)}
       <button class="button">Добавить в дневник</button>
       <button type="button" class="button secondary" data-close>Отмена</button>
     </form>
   `);
   document.querySelector("#add-food-form").addEventListener("submit", event => {
     event.preventDefault();
-    const grams = Number(new FormData(event.target).get("grams"));
+    const form = new FormData(event.target);
+    const grams = Number(form.get("grams"));
+    selectedMeal = form.get("meal");
     addFood(food, grams);
     closeModal();
   });
@@ -385,7 +588,7 @@ function openAddFood(food) {
 
 function addFood(food, grams) {
   const factor = grams / 100;
-  byDate().unshift({
+  addEntryToDate(selectedDateKey, selectedMeal, {
     id: crypto.randomUUID(),
     name: food.name,
     grams,
@@ -395,7 +598,6 @@ function addFood(food, grams) {
     carbs: food.carbs * factor,
     source: food.source
   });
-  saveState();
   activeTab = "home";
   render();
   toast("Добавлено в дневник");
@@ -412,8 +614,10 @@ function openCustomFood() {
         ${numberField("protein", "Белки", "", "14")}
         ${numberField("fat", "Жиры", "", "10")}
         ${numberField("carbs", "Углеводы", "", "21")}
+        ${numberField("grams", "Съедено, г", 100, "100")}
+        ${selectField("meal", "Прием пищи", MEALS, selectedMeal)}
       </div>
-      <button class="button">Сохранить</button>
+      <button class="button">Сохранить и добавить</button>
     </form>
   `);
   document.querySelector("#custom-food-form").addEventListener("submit", event => {
@@ -430,12 +634,44 @@ function openCustomFood() {
       carbs: Number(form.get("carbs")),
       source: "Моя база"
     };
-    state.customFoods.unshift(food);
+    selectedMeal = form.get("meal");
+    const grams = Number(form.get("grams") || 100);
+    saveFoodToLibrary(food);
+    addFood(food, grams);
     saveState();
     closeModal();
-    render();
-    toast("Продукт сохранен");
+    toast("Блюдо сохранено в библиотеку");
   });
+}
+
+function saveFoodToLibrary(food) {
+  state.customFoods ||= [];
+  const normalized = normalizeFood(food);
+  const key = foodKey(normalized);
+  const index = state.customFoods.findIndex((item) => foodKey(item) === key);
+  if (index >= 0) {
+    state.customFoods[index] = { ...state.customFoods[index], ...normalized, updatedAt: new Date().toISOString() };
+  } else {
+    state.customFoods.unshift({ ...normalized, id: normalized.id || crypto.randomUUID(), source: normalized.source || "Моя база", createdAt: new Date().toISOString() });
+  }
+}
+
+function normalizeFood(food) {
+  return {
+    id: food.id || crypto.randomUUID(),
+    name: String(food.name || "Мое блюдо").trim(),
+    brand: food.brand || "",
+    country: food.country || "custom",
+    kcal: Number(food.kcal || 0),
+    protein: Number(food.protein ?? food.protein_g ?? 0),
+    fat: Number(food.fat ?? food.fat_g ?? 0),
+    carbs: Number(food.carbs ?? food.carbs_g ?? 0),
+    source: food.source || "Моя база"
+  };
+}
+
+function foodKey(food) {
+  return `${food.name}|${food.brand}`.trim().toLowerCase().replace(/ё/g, "е");
 }
 
 async function analyzePhoto() {
@@ -470,16 +706,20 @@ async function analyzePhoto() {
     const estimate = await response.json();
     out.innerHTML = aiEstimateView(preview, estimate);
     out.querySelector("[data-action='add-ai-estimate']")?.addEventListener("click", () => {
-      (estimate.items || []).forEach(item => byDate().unshift({
-        id: crypto.randomUUID(),
-        name: item.name,
-        grams: Number(item.grams || 0),
-        kcal: Number(item.kcal || 0),
-        protein: Number(item.protein_g || 0),
-        fat: Number(item.fat_g || 0),
-        carbs: Number(item.carbs_g || 0),
-        source: "AI photo"
-      }));
+      (estimate.items || []).forEach(item => {
+        const entry = {
+          id: crypto.randomUUID(),
+          name: item.name,
+          grams: Number(item.grams || 0),
+          kcal: Number(item.kcal || 0),
+          protein: Number(item.protein_g || 0),
+          fat: Number(item.fat_g || 0),
+          carbs: Number(item.carbs_g || 0),
+          source: "AI photo"
+        };
+        addEntryToDate(selectedDateKey, selectedMeal, entry);
+        saveEntryAsFood(entry, "AI-блюдо");
+      });
       saveState();
       activeTab = "home";
       render();
@@ -487,6 +727,23 @@ async function analyzePhoto() {
   } catch {
     out.innerHTML = `<img class="photo-preview" src="${preview}" alt="Фото блюда" /><div class="card">Не удалось получить AI-анализ. Проверь endpoint.</div>`;
   }
+}
+
+function saveEntryAsFood(entry, source = "Моя база") {
+  const grams = Number(entry.grams || 0);
+  if (!entry.name || grams <= 0) return;
+  const factor = 100 / grams;
+  saveFoodToLibrary({
+    id: crypto.randomUUID(),
+    name: entry.name,
+    brand: "",
+    country: "custom",
+    kcal: Number(entry.kcal || 0) * factor,
+    protein: Number(entry.protein || 0) * factor,
+    fat: Number(entry.fat || 0) * factor,
+    carbs: Number(entry.carbs || 0) * factor,
+    source
+  });
 }
 
 function aiEstimateView(preview, estimate) {
@@ -517,19 +774,44 @@ function saveProfile(event) {
   event.preventDefault();
   const form = new FormData(event.target);
   const profile = {
+    accountName: String(form.get("accountName") || "").trim(),
     sex: form.get("sex"),
     age: Number(form.get("age")),
     height: Number(form.get("height")),
     weight: Number(form.get("weight")),
+    targetWeight: Number(form.get("targetWeight")),
+    planDays: Number(form.get("planDays")),
     activity: form.get("activity"),
     goal: form.get("goal")
   };
   profile.targets = calcTargets(profile);
   state.profile = profile;
+  state.account.name = profile.accountName || state.account.name;
   saveState();
-  activeTab = "home";
-  render();
-  toast("Норма КБЖУ рассчитана");
+  showRegistrationLoading(profile.plan?.note);
+}
+
+function showRegistrationLoading(note) {
+  $app.innerHTML = `
+    <section class="calculation-screen">
+      <div class="calc-orbit">
+        <div class="brand-mark">E</div>
+      </div>
+      <p class="eyebrow">EliteCalorie Intelligence</p>
+      <h2>Собираю персональный план</h2>
+      <div class="calc-steps">
+        <span>Метаболизм</span>
+        <span>Цель</span>
+        <span>КБЖУ</span>
+      </div>
+      ${note ? `<p class="calc-note">${escapeHtml(note)}</p>` : `<p class="calc-note">План готовится под ваш темп, вес и активность.</p>`}
+    </section>
+  `;
+  setTimeout(() => {
+    activeTab = "home";
+    render();
+    toast(note || "Норма КБЖУ рассчитана");
+  }, 1700);
 }
 
 function openSettings() {
