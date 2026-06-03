@@ -94,6 +94,9 @@ if (!state.account) {
 }
 let activeTab = state.profile ? "home" : "profile";
 let remoteCache = [];
+let searchMode = state.searchMode || "all";
+let searchCategory = state.searchCategory || "all";
+let profilePane = state.profilePane || "account";
 
 function loadState() {
   const fallback = {
@@ -240,7 +243,7 @@ function calcTargets(profile) {
   let kcal = Math.round(tdee + plan.dailyKcalDelta);
   if (kcal < kcalFloor) {
     kcal = kcalFloor;
-    plan.note = `${plan.note ? `${plan.note} ` : ""}Калории не опускаю ниже безопасного минимума ${kcalFloor} ккал.`;
+    plan.note = `${plan.note ? `${plan.note} ` : ""}${forProfile(profile, `Калории не опускаю ниже безопасного минимума ${kcalFloor} ккал.`, `Calories are not lowered below the safe minimum of ${kcalFloor} kcal.`)}`;
   }
   const protein = Math.round(profile.weight * (plan.goal === "lose" ? 1.8 : 1.6));
   const fat = Math.round(profile.weight * (plan.goal === "gain" ? 0.9 : 0.8));
@@ -265,7 +268,7 @@ function buildWeightPlan(profile, tdee) {
       planDays: requestedDays,
       dailyKcalDelta: 0,
       finishDate: futureDateKey(requestedDays),
-      note: "Цель похожа на поддержание, поэтому держим стабильную норму."
+      note: forProfile(profile, "Цель похожа на поддержание, поэтому держим стабильную норму.", "This looks like maintenance, so the target stays stable.")
     };
   }
 
@@ -278,10 +281,10 @@ function buildWeightPlan(profile, tdee) {
 
   if (requestedDays < minDays) {
     planDays = minDays;
-    note = `Срок был слишком жестким, поставил безопасный минимум: ${minDays} дн.`;
+    note = forProfile(profile, `Срок был слишком жестким, поставил безопасный минимум: ${minDays} дн.`, `The timeline was too aggressive, so I set the safe minimum: ${minDays} days.`);
   } else if (requestedDays > maxDays) {
     planDays = maxDays;
-    note = `Срок был слишком растянутым, поставил рабочий максимум: ${maxDays} дн.`;
+    note = forProfile(profile, `Срок был слишком растянутым, поставил рабочий максимум: ${maxDays} дн.`, `The timeline was too long, so I set a practical maximum: ${maxDays} days.`);
   }
 
   const dailyKcalDelta = Math.round((diff * 7700) / planDays);
@@ -296,6 +299,10 @@ function buildWeightPlan(profile, tdee) {
     finishDate: futureDateKey(planDays),
     note
   };
+}
+
+function forProfile(profile, ru, en) {
+  return profile?.language === "en" ? en : ru;
 }
 
 function futureDateKey(days) {
@@ -338,22 +345,22 @@ function homeView(total, target, progress) {
       <div class="hero-head">
         <div>
           <p class="eyebrow">${selectedDateKey === todayKey() ? t("today") : dayTitle(current)}</p>
-          <h2>${fmt(total.kcal)} из ${fmt(target.kcal)} ккал</h2>
-          <p class="hero-copy">${progress.over > 0 ? `Переел дневную норму на ${fmt(progress.over)} ккал.` : (state.profile ? "Дневная цель обновляется после изменения анкеты." : "Заполни профиль, чтобы EliteCalorie рассчитал твою норму.")}</p>
+          <h2>${fmt(total.kcal)} ${ui("из", "of")} ${fmt(target.kcal)} ${ui("ккал", "kcal")}</h2>
+          <p class="hero-copy">${progress.over > 0 ? `${ui("Переел дневную норму на", "Over daily target by")} ${fmt(progress.over)} ${ui("ккал", "kcal")}.` : (state.profile ? ui("Дневная цель обновляется после изменения анкеты.", "Daily target updates after profile changes.") : ui("Заполни профиль, чтобы EliteCalorie рассчитал твою норму.", "Fill in your profile so EliteCalorie can calculate your target."))}</p>
         </div>
         <div class="ring ${progress.over > 0 ? "over" : ""}" style="--value:${progress.visual}">
-          <div class="ring-inner"><strong>${progress.percent}%</strong><span>${progress.over > 0 ? t("overPlan") : t("plan")}</span>${progress.over > 0 ? `<em>+${fmt(progress.over)} ккал</em>` : ""}</div>
+          <div class="ring-inner"><strong>${progress.percent}%</strong><span>${progress.over > 0 ? t("overPlan") : t("plan")}</span>${progress.over > 0 ? `<em>+${fmt(progress.over)} ${ui("ккал", "kcal")}</em>` : ""}</div>
         </div>
       </div>
       <div class="macro-grid">
-        ${macro("Белки", total.protein, target.protein, "г")}
-        ${macro("Жиры", total.fat, target.fat, "г")}
-        ${macro("Углеводы", total.carbs, target.carbs, "г")}
+        ${macro(ui("Белки", "Protein"), total.protein, target.protein, ui("г", "g"))}
+        ${macro(ui("Жиры", "Fat"), total.fat, target.fat, ui("г", "g"))}
+        ${macro(ui("Углеводы", "Carbs"), total.carbs, target.carbs, ui("г", "g"))}
       </div>
     </section>
     <section class="section">
       <div class="section-title">
-        <div><h2>${t("diary")}</h2><p>${dayTitle(current)} · ${totalEntries ? `${totalEntries} записей` : "пока пусто"}</p></div>
+        <div><h2>${t("diary")}</h2><p>${dayTitle(current)} · ${totalEntries ? `${totalEntries} ${ui("записей", "entries")}` : ui("пока пусто", "empty")}</p></div>
         <button class="pill" data-action="clear-day">${t("clear")}</button>
       </div>
       <div class="day-strip">
@@ -361,7 +368,7 @@ function homeView(total, target, progress) {
       </div>
       <div class="meal-head">
         <div>
-          <span>Формат дневника</span>
+          <span>${ui("Формат дневника", "Diary format")}</span>
           <strong>${t("timeFormat")}</strong>
         </div>
         <button class="pill" data-action="copy-day-tomorrow">${t("dayToTomorrow")}</button>
@@ -375,7 +382,7 @@ function homeView(total, target, progress) {
 
 function dayButton(date) {
   const key = dateToKey(date);
-  const labels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+  const labels = lang() === "en" ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] : ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
   const label = labels[(date.getDay() + 6) % 7];
   const count = allDayEntries(key).length;
   return `
@@ -388,13 +395,17 @@ function dayButton(date) {
 }
 
 function dayTitle(date) {
-  const labels = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
-  return `${labels[date.getDay()]}, ${date.getDate()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
+  const labels = lang() === "en"
+    ? ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    : ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
+  return lang() === "en"
+    ? `${labels[date.getDay()]}, ${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`
+    : `${labels[date.getDay()]}, ${date.getDate()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function macro(label, current, target, unit) {
   const info = progressInfo(current, target);
-  const hint = info.over > 0 ? `переел на ${fmt(info.over)} ${unit}` : `${info.percent}% нормы`;
+  const hint = info.over > 0 ? `${ui("переел на", "over by")} ${fmt(info.over)} ${unit}` : `${info.percent}% ${ui("нормы", "of target")}`;
   return `<div class="macro ${info.over > 0 ? "over" : ""}"><span>${label}</span><strong>${fmt(current)} / ${fmt(target)} ${unit}</strong><em>${hint}</em></div>`;
 }
 
@@ -403,13 +414,13 @@ function entryRow(item) {
     <article class="entry-row">
       <div>
         <h3>${escapeHtml(item.name)}</h3>
-        <p>${escapeHtml(item.time || "--:--")} · ${fmt(item.grams)} г · Б ${fmt(item.protein)} · Ж ${fmt(item.fat)} · У ${fmt(item.carbs)}</p>
+        <p class="entry-meta"><span class="entry-time">${escapeHtml(item.time || "--:--")}</span><span>${fmt(item.grams)} ${ui("г", "g")}</span><span>${ui("Б", "P")} ${fmt(item.protein)}</span><span>${ui("Ж", "F")} ${fmt(item.fat)}</span><span>${ui("У", "C")} ${fmt(item.carbs)}</span></p>
       </div>
       <div class="entry-actions">
-        <span class="kcal-chip">${fmt(item.kcal)} ккал</span>
-        <button class="mini-action" data-action="edit-entry" data-id="${item.id}" title="Исправить граммы">г</button>
-        <button class="mini-action" data-action="copy-entry-tomorrow" data-id="${item.id}" title="Скопировать на завтра">↗</button>
-        <button class="mini-action danger" data-action="delete-entry" data-id="${item.id}" title="Удалить">×</button>
+        <span class="kcal-chip">${fmt(item.kcal)} ${ui("ккал", "kcal")}</span>
+        <button class="mini-action" data-action="edit-entry" data-id="${item.id}" title="${ui("Исправить граммы", "Edit grams")}">${ui("г", "g")}</button>
+        <button class="mini-action" data-action="copy-entry-tomorrow" data-id="${item.id}" title="${ui("Скопировать на завтра", "Copy to tomorrow")}">↗</button>
+        <button class="mini-action danger" data-action="delete-entry" data-id="${item.id}" title="${ui("Удалить", "Delete")}">×</button>
       </div>
     </article>
   `;
@@ -417,50 +428,83 @@ function entryRow(item) {
 
 function searchView() {
   const library = state.customFoods || [];
+  const quick = favoriteQuickFoods();
   return `
     <section class="section">
       <div class="section-title">
         <div><h2>${t("food")}</h2><p>${t("foodCaption")}</p></div>
       </div>
-      <div class="library-grid">
-        <div class="library-rail">
+      <div class="library-console">
+        <div class="library-metrics">
           <div><span>${t("generalLibrary")}</span><strong>${FOOD_DB.length}+</strong></div>
-          <p class="mini-note">Россия, Беларусь, базовые блюда, фастфуд и товары через Open Food Facts.</p>
-        </div>
-        <div class="library-rail">
           <div><span>${t("personalLibrary")}</span><strong>${library.length}</strong></div>
-          <div class="library-list">
-            ${library.length ? library.slice(0, 8).map(food => `<button class="library-chip" data-food='${escapeAttr(JSON.stringify(food))}'>${escapeHtml(food.name)}</button>`).join("") : `<span class="library-empty">Свои блюда появятся здесь</span>`}
-          </div>
         </div>
+        <div class="segmented" role="group" aria-label="Режим библиотеки">
+          ${libraryModeButton("all", ui("Все", "All"))}
+          ${libraryModeButton("general", ui("Общая", "Shared"))}
+          ${libraryModeButton("personal", ui("Моя", "Mine"))}
+        </div>
+        <div class="category-strip">
+          ${libraryCategories().map(category => `<button class="category-chip ${searchCategory === category.id ? "active" : ""}" data-category="${category.id}">${category.label}</button>`).join("")}
+        </div>
+        ${library.length ? `
+          <div class="personal-shelf">
+            <div><span>${ui("Быстро из моей базы", "Quick from my library")}</span><button data-library-mode="personal">${ui("Открыть", "Open")}</button></div>
+            <div class="library-list">
+              ${library.slice(0, 10).map(food => `<button class="library-chip" data-food='${escapeAttr(JSON.stringify(food))}'>${escapeHtml(food.name)}</button>`).join("")}
+            </div>
+          </div>
+        ` : ""}
       </div>
       <div class="searchbar">
         <div class="field"><input id="search" placeholder="${t("searchPlaceholder")}" autocomplete="off" /></div>
         <button class="icon-button" data-action="scan-barcode" title="Сканировать штрихкод">${icon("i-barcode")}</button>
         <button class="icon-button" data-action="custom-food" title="Добавить продукт">${icon("i-plus")}</button>
       </div>
-      <div id="results" class="stack"></div>
+      ${quick.length ? `<div class="quick-picks">${quick.map(food => `<button data-food='${escapeAttr(JSON.stringify(food))}'><span>${escapeHtml(food.name)}</span><em>${fmt(food.kcal)} ${ui("ккал", "kcal")}</em></button>`).join("")}</div>` : ""}
+      <div id="results" class="stack food-results"></div>
     </section>
   `;
+}
+
+function libraryModeButton(id, label) {
+  return `<button class="${searchMode === id ? "active" : ""}" data-library-mode="${id}">${label}</button>`;
+}
+
+function libraryCategories() {
+  return [
+    { id: "all", label: ui("Все", "All") },
+    { id: "protein", label: ui("Белок", "Protein") },
+    { id: "dairy", label: ui("Молочка", "Dairy") },
+    { id: "ready", label: ui("Готовое", "Meals") },
+    { id: "fastfood", label: ui("Фастфуд", "Fast food") },
+    { id: "snacks", label: ui("Снеки", "Snacks") },
+    { id: "drinks", label: ui("Напитки", "Drinks") }
+  ];
+}
+
+function favoriteQuickFoods() {
+  const names = ["Куриная грудка", "Творог 5%", "Банан", "Гречка вареная", "Яйцо куриное", "Йогурт греческий"];
+  return names.map(name => FOOD_DB.find(food => normalizeText(food.name) === normalizeText(name))).filter(Boolean);
 }
 
 function photoView() {
   return `
     <section class="section">
       <div class="section-title">
-        <div><h2>Фото</h2><p>тарелка, этикетка или таблица КБЖУ</p></div>
+        <div><h2>${t("photo")}</h2><p>${t("photoCaption")}</p></div>
       </div>
       <div class="card photo-box">
         <div class="field">
-          <label>Фото блюда или этикетки</label>
+          <label>${ui("Фото блюда или этикетки", "Dish or label photo")}</label>
           <input id="photo-input" type="file" accept="image/*" />
         </div>
         <div class="field">
-          <label>Уточнение</label>
-          <textarea id="photo-note" placeholder="Например: съел 180 г; или курица 150 г, гречка половина тарелки"></textarea>
+          <label>${ui("Уточнение", "Note")}</label>
+          <textarea id="photo-note" placeholder="${ui("Например: съел 180 г; или курица 150 г, гречка половина тарелки", "Example: ate 180 g, chicken 150 g, half a plate of buckwheat")}"></textarea>
         </div>
-        <p class="mini-note">Можно отправить тарелку, упаковку или этикетку. Если вес не очевиден, напиши граммовку в уточнении.</p>
-        <button class="button" data-action="analyze-photo">Анализировать</button>
+        <p class="mini-note">${ui("Можно отправить тарелку, упаковку или этикетку. Если вес не очевиден, напиши граммовку в уточнении.", "Upload a plate, package, or nutrition label. If the weight is unclear, add grams in the note.")}</p>
+        <button class="button" data-action="analyze-photo">${ui("Анализировать", "Analyze")}</button>
       </div>
       <div id="photo-result" class="stack section"></div>
     </section>
@@ -480,17 +524,40 @@ function profileView() {
     activity: "low",
     goal: "lose"
   };
-  const plan = state.profile?.plan;
   return `
     <section class="section">
       <div class="section-title">
         <div><h2>${ui("Аккаунт", "Account")}</h2><p>${ui("персональный план, цель и норма КБЖУ", "personal plan, goal, calories and macros")}</p></div>
       </div>
-      <form id="profile-form" class="profile-panel stack">
-        <div class="account-card">
-          <span>${ui("Аккаунт", "Account")}</span>
+      <div class="profile-tabs">
+        ${profilePaneButton("account", ui("Профиль", "Profile"))}
+        ${profilePaneButton("measurements", ui("Замеры", "Measurements"))}
+      </div>
+      ${profilePane === "measurements" ? measurementsPane(p) : accountPane(p)}
+    </section>
+  `;
+}
+
+function profilePaneButton(id, label) {
+  return `<button class="${profilePane === id ? "active" : ""}" data-profile-pane="${id}">${label}</button>`;
+}
+
+function accountPane(p) {
+  const plan = state.profile?.plan;
+  return `
+    <form id="profile-form" class="profile-panel stack">
+      <div class="profile-hero">
+        <div class="profile-avatar">${escapeHtml((state.account?.name || "E").trim().slice(0, 1).toUpperCase())}</div>
+        <div>
+          <span>${ui("Личный кабинет", "Personal cabinet")}</span>
           <strong>${escapeHtml(state.account?.name || "Аккаунт EliteCalorie")}</strong>
-          <p>${state.account?.username ? `@${escapeHtml(state.account.username)}` : ui("Данные и дневник сохраняются на этом устройстве.", "Diary data is saved on this device.")}</p>
+          <p>${state.account?.username ? `@${escapeHtml(state.account.username)}` : ui("Дневник, продукты и замеры сохраняются на этом устройстве.", "Diary, foods, and measurements are saved on this device.")}</p>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-head">
+          <div><strong>${ui("Основное", "Basics")}</strong><span>${ui("данные для расчета обмена", "used for metabolism calculation")}</span></div>
         </div>
         <div class="field"><label>${ui("Имя аккаунта", "Account name")}</label><input name="accountName" value="${escapeAttr(p.accountName || state.account?.name || "")}" placeholder="${ui("Ваше имя", "Your name")}" required /></div>
         <div class="form-grid">
@@ -498,37 +565,69 @@ function profileView() {
           ${selectField("sex", ui("Пол", "Sex"), [["male", ui("Мужской", "Male")], ["female", ui("Женский", "Female")]], p.sex)}
           ${numberField("age", ui("Возраст", "Age"), p.age, "28")}
           ${numberField("height", ui("Рост, см", "Height, cm"), p.height, "178")}
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-head">
+          <div><strong>${ui("Цель и активность", "Goal and activity")}</strong><span>${ui("на этом строится безопасный темп", "sets a safe pace")}</span></div>
+        </div>
+        <div class="form-grid">
           ${numberField("weight", ui("Текущий вес, кг", "Current weight, kg"), p.weight, "72")}
           ${numberField("targetWeight", ui("Целевой вес, кг", "Target weight, kg"), p.targetWeight, "68")}
           ${numberField("planDays", ui("Срок, дней", "Plan days"), p.planDays, "90")}
           ${selectField("activity", ui("Активность", "Activity"), activityOptions(), p.activity)}
           ${selectField("goal", ui("Цель", "Goal"), goalOptions(), p.goal)}
         </div>
-        <div class="profile-block-title">
-          <strong>${ui("Антропометрия", "Body measurements")}</strong>
-          <span>${ui("сохраняется по датам для прогресса", "saved by date for progress tracking")}</span>
+      </div>
+      <button class="button">${t("saveProfile")}</button>
+    </form>
+    ${state.profile ? `
+      <div class="card section plan-card">
+        <span>${ui("Персональный план", "Personal plan")}</span>
+        <h3>${targets().kcal} ${ui("ккал", "kcal")} · ${ui("Б", "P")} ${targets().protein} · ${ui("Ж", "F")} ${targets().fat} · ${ui("У", "C")} ${targets().carbs}</h3>
+        <p>${planSummary(plan)}</p>
+        ${plan?.note ? `<em>${escapeHtml(plan.note)}</em>` : ""}
+      </div>
+    ` : ""}
+  `;
+}
+
+function measurementsPane(p) {
+  return `
+    <form id="measurements-form" class="profile-panel stack">
+      <div class="form-section">
+        <div class="form-section-head">
+          <div><strong>${ui("Новый замер", "New measurement")}</strong><span>${ui("лучше делать утром и в одинаковых условиях", "best done in the morning under the same conditions")}</span></div>
         </div>
-        <div class="form-grid">
-          ${optionalNumberField("chest", ui("Грудь, см", "Chest, cm"), p.chest, "98")}
-          ${optionalNumberField("waist", ui("Талия, см", "Waist, cm"), p.waist, "78")}
-          ${optionalNumberField("hips", ui("Бедра, см", "Hips, cm"), p.hips, "96")}
-          ${optionalNumberField("neck", ui("Шея, см", "Neck, cm"), p.neck, "39")}
-          ${optionalNumberField("biceps", ui("Бицепс, см", "Biceps, cm"), p.biceps, "34")}
-          ${optionalNumberField("thigh", ui("Бедро, см", "Thigh, cm"), p.thigh, "56")}
-        </div>
-        <button class="button">${t("saveProfile")}</button>
-      </form>
-      ${measurementGuide()}
-      ${measurementProgressView()}
-      ${state.profile ? `
-        <div class="card section plan-card">
-          <span>${ui("Персональный план", "Personal plan")}</span>
-          <h3>${targets().kcal} ккал · Б ${targets().protein} · Ж ${targets().fat} · У ${targets().carbs}</h3>
-          <p>${planSummary(plan)}</p>
-          ${plan?.note ? `<em>${escapeHtml(plan.note)}</em>` : ""}
-        </div>
-      ` : ""}
-    </section>
+        ${measurementGroup(ui("Корпус", "Torso"), [
+          measurementField("weight", ui("Вес", "Weight"), p.weight, ui("кг", "kg")),
+          measurementField("neck", ui("Шея", "Neck"), p.neck),
+          measurementField("shoulders", ui("Плечи", "Shoulders"), p.shoulders),
+          measurementField("chest", ui("Грудь", "Chest"), p.chest),
+          measurementField("waist", ui("Талия", "Waist"), p.waist),
+          measurementField("hips", ui("Бедра/таз", "Hips"), p.hips)
+        ])}
+        ${measurementGroup(ui("Руки", "Arms"), [
+          measurementField("leftBiceps", ui("Бицепс левый", "Left biceps"), p.leftBiceps ?? p.biceps),
+          measurementField("rightBiceps", ui("Бицепс правый", "Right biceps"), p.rightBiceps ?? p.biceps),
+          measurementField("leftForearm", ui("Предплечье левое", "Left forearm"), p.leftForearm),
+          measurementField("rightForearm", ui("Предплечье правое", "Right forearm"), p.rightForearm)
+        ])}
+        ${measurementGroup(ui("Ноги", "Legs"), [
+          measurementField("leftThigh", ui("Бедро левое", "Left thigh"), p.leftThigh ?? p.thigh),
+          measurementField("rightThigh", ui("Бедро правое", "Right thigh"), p.rightThigh ?? p.thigh),
+          measurementField("leftCalf", ui("Икра левая", "Left calf"), p.leftCalf),
+          measurementField("rightCalf", ui("Икра правая", "Right calf"), p.rightCalf)
+        ])}
+      </div>
+      <button class="button">${ui("Сохранить замеры", "Save measurements")}</button>
+    </form>
+    <button class="measure-help-button" data-action="measurement-guide">
+      <span>${ui("Не уверен, где мерить?", "Not sure where to measure?")}</span>
+      <strong>${ui("Показать понятную схему", "Show clear guide")}</strong>
+    </button>
+    ${measurementProgressView()}
   `;
 }
 
@@ -565,22 +664,69 @@ function goalOptions() {
     : [["lose", "Снизить вес"], ["keep", "Поддерживать"], ["gain", "Набрать"]];
 }
 
-function measurementGuide() {
+function measurementField(name, label, value, unit = ui("см", "cm")) {
   return `
-    <div class="card measurement-guide">
+    <label class="measure-field">
+      <span>${label}</span>
+      <input name="${name}" type="number" min="0" step="0.1" value="${value ?? ""}" placeholder="${unit}" />
+    </label>
+  `;
+}
+
+function measurementGroup(title, fields) {
+  return `
+    <div class="measure-group">
+      <div class="measure-group-title">${title}</div>
+      <div class="measure-grid accurate">${fields.join("")}</div>
+    </div>
+  `;
+}
+
+function openMeasurementGuide() {
+  openModal(`
+    <div class="section-title"><div><h2>${ui("Как измерить тело", "How to measure")}</h2><p>${ui("точки замеров для прогресса", "measurement points for progress")}</p></div></div>
+    ${measurementGuideContent()}
+    <button class="button" data-close>${ui("Понятно", "Got it")}</button>
+  `);
+}
+
+function measurementGuideContent() {
+  return `
+    <div class="measurement-guide">
       <div>
-        <span class="eyebrow">Как измерять</span>
-        <p>Лента параллельно полу, без натяжения. Талия по самой узкой точке, бедра по самой широкой, грудь по линии сосков.</p>
+        <span class="eyebrow">${ui("Правило", "Rule")}</span>
+        <p>${ui("Измеряй утром или в одно и то же время. Лента параллельно полу, прилегает к коже, но не перетягивает.", "Measure in the morning or at the same time. Keep the tape level, touching the skin without squeezing.")}</p>
+        <ul class="guide-list">
+          <li><strong>${ui("Плечи", "Shoulders")}</strong><span>${ui("по самым широким точкам плеч.", "around the widest shoulder line.")}</span></li>
+          <li><strong>${ui("Грудь", "Chest")}</strong><span>${ui("по линии сосков, спокойно выдохнуть.", "across nipple line after a relaxed exhale.")}</span></li>
+          <li><strong>${ui("Талия", "Waist")}</strong><span>${ui("самая узкая точка корпуса.", "the narrowest point of the torso.")}</span></li>
+          <li><strong>${ui("Лево/право", "Left/right")}</strong><span>${ui("руки и ноги записывай отдельно.", "track arms and legs separately.")}</span></li>
+        </ul>
       </div>
-      <svg viewBox="0 0 180 160" role="img" aria-label="Схема измерений тела">
-        <path class="body-line" d="M90 23c13 0 22 9 22 22s-9 22-22 22-22-9-22-22 9-22 22-22Z"/>
-        <path class="body-line" d="M61 73c12-8 46-8 58 0 8 15 9 39 5 64H56c-4-25-3-49 5-64Z"/>
-        <path class="measure-line" d="M51 83h78"/>
-        <path class="measure-line" d="M57 108h66"/>
-        <path class="measure-line" d="M52 132h76"/>
-        <text x="134" y="87">грудь</text>
-        <text x="127" y="112">талия</text>
-        <text x="132" y="136">бедра</text>
+      <svg class="measurement-map" viewBox="0 0 230 260" role="img" aria-label="${ui("Схема измерений тела", "Body measurement guide")}">
+        <defs>
+          <linearGradient id="bodyGrad" x1="0" x2="1">
+            <stop offset="0" stop-color="#26323f"/>
+            <stop offset="1" stop-color="#1a2430"/>
+          </linearGradient>
+        </defs>
+        <circle class="body-fill" cx="115" cy="35" r="22"/>
+        <path class="body-fill" d="M82 66c15-10 51-10 66 0 13 20 16 56 10 94l-13 78h-21l-9-63-9 63H85l-13-78c-6-38-3-74 10-94Z"/>
+        <path class="limb-fill" d="M78 77 53 142M152 77l25 65M92 236l-10 15M138 236l10 15"/>
+        <path class="guide-line neck" d="M91 58h48"/>
+        <path class="guide-line shoulders" d="M66 75h98"/>
+        <path class="guide-line chest" d="M72 100h86"/>
+        <path class="guide-line waist" d="M80 130h70"/>
+        <path class="guide-line hips" d="M72 160h86"/>
+        <path class="guide-line arm" d="M55 122h35M140 122h35"/>
+        <path class="guide-line leg" d="M78 205h30M122 205h30"/>
+        <text x="151" y="60">${ui("шея", "neck")}</text>
+        <text x="169" y="78">${ui("плечи", "shoulders")}</text>
+        <text x="163" y="104">${ui("грудь", "chest")}</text>
+        <text x="155" y="133">${ui("талия", "waist")}</text>
+        <text x="162" y="164">${ui("бедра", "hips")}</text>
+        <text x="16" y="126">${ui("руки", "arms")}</text>
+        <text x="154" y="209">${ui("ноги", "legs")}</text>
       </svg>
     </div>
   `;
@@ -591,7 +737,7 @@ function measurementProgressView() {
     .slice()
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   if (!records.length) {
-    return `<div class="card progress-card"><strong>Прогресс</strong><p>После сохранения аккаунта здесь появятся вес и замеры по дням.</p></div>`;
+    return `<div class="card progress-card"><strong>${ui("Прогресс", "Progress")}</strong><p>${ui("После сохранения замеров здесь появятся вес, объемы и динамика по дням.", "After saving measurements, weight, body sizes, and trends will appear here.")}</p></div>`;
   }
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - 6);
@@ -607,15 +753,30 @@ function measurementProgressView() {
   return `
     <div class="card progress-card">
       <div class="progress-head">
-        <div><span>Прогресс недели</span><strong>${weightDelta >= 0 ? "+" : ""}${weightDelta.toFixed(1)} кг</strong></div>
+        <div><span>${ui("Прогресс недели", "Weekly progress")}</span><strong>${weightDelta >= 0 ? "+" : ""}${weightDelta.toFixed(1)} ${ui("кг", "kg")}</strong></div>
         <em>${autoCorrectionText(weightDelta, range.length)}</em>
       </div>
       <div class="weight-bars">
         ${range.map(record => weightBar(record, min, max)).join("")}
       </div>
-      <p>${waistDelta ? `Талия: ${waistDelta}. ` : ""}Последний вес: ${Number(last.weight || 0).toFixed(1)} кг · записей: ${records.length}</p>
+      ${measurementMiniStats(last)}
+      <p>${waistDelta ? `${ui("Талия", "Waist")}: ${waistDelta}. ` : ""}${ui("Последний вес", "Latest weight")}: ${Number(last.weight || 0).toFixed(1)} ${ui("кг", "kg")} · ${ui("записей", "records")}: ${records.length}</p>
     </div>
   `;
+}
+
+function measurementMiniStats(record) {
+  const items = [
+    [ui("Грудь", "Chest"), record.chest],
+    [ui("Талия", "Waist"), record.waist],
+    [ui("Бедра", "Hips"), record.hips],
+    [ui("Бицепс Л", "L biceps"), record.leftBiceps],
+    [ui("Бицепс П", "R biceps"), record.rightBiceps],
+    [ui("Бедро Л", "L thigh"), record.leftThigh],
+    [ui("Бедро П", "R thigh"), record.rightThigh]
+  ].filter(([, value]) => Number(value) > 0);
+  if (!items.length) return "";
+  return `<div class="measure-stat-grid">${items.map(([label, value]) => `<div><span>${label}</span><strong>${Number(value).toFixed(1)}</strong></div>`).join("")}</div>`;
 }
 
 function weightBar(record, min, max) {
@@ -628,30 +789,32 @@ function weightBar(record, min, max) {
 function optionalDelta(from, to) {
   if (!from || !to) return "";
   const delta = Number(to) - Number(from);
-  if (Math.abs(delta) < 0.05) return "без изменений";
-  return `${delta > 0 ? "+" : ""}${delta.toFixed(1)} см`;
+  if (Math.abs(delta) < 0.05) return ui("без изменений", "no change");
+  return `${delta > 0 ? "+" : ""}${delta.toFixed(1)} ${ui("см", "cm")}`;
 }
 
 function autoCorrectionText(weightDelta, count) {
   const profile = state.profile;
-  if (!profile || count < 2) return "нужно больше замеров";
+  if (!profile || count < 2) return ui("нужно больше замеров", "need more measurements");
   if (profile.goal === "lose") {
-    if (weightDelta > 0.3) return "вес растет, проверь среднюю калорийность";
-    if (weightDelta < -1.2) return "темп высокий, не режь калории сильнее";
-    return "темп выглядит рабочим";
+    if (weightDelta > 0.3) return ui("вес растет, проверь среднюю калорийность", "weight is rising, check average calories");
+    if (weightDelta < -1.2) return ui("темп высокий, не режь калории сильнее", "pace is fast, do not cut calories harder");
+    return ui("темп выглядит рабочим", "pace looks good");
   }
   if (profile.goal === "gain") {
-    if (weightDelta < -0.2) return "масса не растет, добавь калории";
-    if (weightDelta > 1.0) return "темп быстрый, следи за талией";
-    return "набор идет ровно";
+    if (weightDelta < -0.2) return ui("масса не растет, добавь калории", "weight is not rising, add calories");
+    if (weightDelta > 1.0) return ui("темп быстрый, следи за талией", "pace is fast, watch waist size");
+    return ui("набор идет ровно", "gain pace looks steady");
   }
-  return Math.abs(weightDelta) > 0.7 ? "вес гуляет, проверь среднюю неделю" : "поддержание стабильное";
+  return Math.abs(weightDelta) > 0.7 ? ui("вес гуляет, проверь среднюю неделю", "weight fluctuates, check weekly average") : ui("поддержание стабильное", "maintenance is stable");
 }
 
 function planSummary(plan) {
-  if (!plan) return "План появится после регистрации.";
+  if (!plan) return ui("План появится после регистрации.", "Plan appears after registration.");
   const goal = goalLabel(plan.goal);
-  return `${goal}: цель ${fmt(plan.targetWeight)} кг за ${plan.planDays} дн., финиш ${plan.finishDate}.`;
+  return lang() === "en"
+    ? `${goal}: target ${fmt(plan.targetWeight)} kg in ${plan.planDays} days, finish ${plan.finishDate}.`
+    : `${goal}: цель ${fmt(plan.targetWeight)} кг за ${plan.planDays} дн., финиш ${plan.finishDate}.`;
 }
 
 function tabs() {
@@ -706,9 +869,30 @@ function bind() {
   document.querySelector("#search")?.addEventListener("input", debounce(runSearch, 220));
   document.querySelector("[data-action='custom-food']")?.addEventListener("click", openCustomFood);
   document.querySelector("[data-action='scan-barcode']")?.addEventListener("click", openBarcodeScanner);
+  document.querySelector("[data-action='measurement-guide']")?.addEventListener("click", openMeasurementGuide);
+  document.querySelectorAll("[data-library-mode]").forEach(btn => btn.addEventListener("click", () => {
+    searchMode = btn.dataset.libraryMode;
+    state.searchMode = searchMode;
+    saveState();
+    render();
+  }));
+  document.querySelectorAll("[data-category]").forEach(btn => btn.addEventListener("click", () => {
+    searchCategory = btn.dataset.category;
+    state.searchCategory = searchCategory;
+    saveState();
+    render();
+  }));
+  document.querySelectorAll("[data-profile-pane]").forEach(btn => btn.addEventListener("click", () => {
+    profilePane = btn.dataset.profilePane;
+    state.profilePane = profilePane;
+    saveState();
+    render();
+  }));
   document.querySelector("[data-action='analyze-photo']")?.addEventListener("click", analyzePhoto);
   document.querySelectorAll(".library-chip[data-food]").forEach(btn => btn.addEventListener("click", () => openAddFood(JSON.parse(btn.dataset.food))));
+  document.querySelectorAll(".quick-picks [data-food]").forEach(btn => btn.addEventListener("click", () => openAddFood(JSON.parse(btn.dataset.food))));
   if (activeTab === "search") runSearch();
+  document.querySelector("#measurements-form")?.addEventListener("submit", saveMeasurementsOnly);
 }
 
 function nextDateKey(key) {
@@ -737,16 +921,16 @@ function deleteEntry(id) {
 function openEditEntry(id) {
   const entry = findEntry(id);
   if (!entry) {
-    toast("Запись не найдена");
+    toast(ui("Запись не найдена", "Entry not found"));
     return;
   }
   openModal(`
-    <div class="section-title"><div><h2>Исправить запись</h2><p>${escapeHtml(entry.name)}</p></div></div>
+    <div class="section-title"><div><h2>${ui("Исправить запись", "Edit entry")}</h2><p>${escapeHtml(entry.name)}</p></div></div>
     <form id="edit-entry-form" class="stack">
-      ${numberField("grams", "Граммы", entry.grams || 100, "100")}
-      ${timeField("time", "Время приема", entry.time || currentTime())}
-      <button class="button">Сохранить</button>
-      <button type="button" class="button secondary" data-close>Отмена</button>
+      ${numberField("grams", ui("Граммы", "Grams"), entry.grams || 100, "100")}
+      ${timeField("time", ui("Время приема", "Meal time"), entry.time || currentTime())}
+      <button class="button">${ui("Сохранить", "Save")}</button>
+      <button type="button" class="button secondary" data-close>${ui("Отмена", "Cancel")}</button>
     </form>
   `);
   document.querySelector("#edit-entry-form").addEventListener("submit", event => {
@@ -758,7 +942,7 @@ function openEditEntry(id) {
     saveState();
     closeModal();
     render();
-    toast("Запись обновлена");
+    toast(ui("Запись обновлена", "Entry updated"));
   });
 }
 
@@ -796,19 +980,43 @@ async function runSearch() {
   const q = document.querySelector("#search")?.value.trim().toLowerCase() || "";
   const results = document.querySelector("#results");
   if (!results) return;
-  const local = [...state.customFoods, ...FOOD_DB]
-    .filter(food => !q || `${food.name} ${food.brand} ${food.country}`.toLowerCase().includes(q))
+  const local = localFoodPool()
+    .filter(food => filterFood(food, q))
     .slice(0, 35);
 
-  results.innerHTML = local.map(foodRow).join("") || `<div class="card empty">Начни вводить название продукта.</div>`;
+  results.innerHTML = local.map(foodRow).join("") || `<div class="card empty">${ui("Начни вводить название продукта.", "Start typing a food name.")}</div>`;
   results.querySelectorAll("[data-food]").forEach(btn => btn.addEventListener("click", () => openAddFood(JSON.parse(btn.dataset.food))));
 
-  if (q.length >= 3) {
+  if (q.length >= 3 && searchMode !== "personal") {
     remoteCache = await searchExternalFood(q);
-    const merged = [...local, ...remoteCache].slice(0, 45);
-    results.innerHTML = merged.map(foodRow).join("") || `<div class="card empty">Не нашел. Добавь продукт вручную.</div>`;
+    const merged = [...local, ...remoteCache.filter(food => filterFood(food, q))].slice(0, 45);
+    results.innerHTML = merged.map(foodRow).join("") || `<div class="card empty">${ui("Не нашел. Добавь продукт вручную.", "No match. Add it manually.")}</div>`;
     results.querySelectorAll("[data-food]").forEach(btn => btn.addEventListener("click", () => openAddFood(JSON.parse(btn.dataset.food))));
   }
+}
+
+function localFoodPool() {
+  if (searchMode === "personal") return [...state.customFoods];
+  if (searchMode === "general") return [...FOOD_DB];
+  return [...state.customFoods, ...FOOD_DB];
+}
+
+function filterFood(food, query) {
+  const text = normalizeText(`${food.name} ${food.brand} ${food.country} ${food.source}`);
+  const matchesQuery = !query || text.includes(normalizeText(query));
+  const matchesCategory = searchCategory === "all" || categorizeFood(food) === searchCategory;
+  return matchesQuery && matchesCategory;
+}
+
+function categorizeFood(food) {
+  const text = normalizeText(`${food.name} ${food.brand}`);
+  if (/кола|сок|квас|компот|морс|чай|какао|смузи|латте|капучино|коктейль|напиток/.test(text)) return "drinks";
+  if (/йогурт|творог|молоко|кефир|сыр|сметан|творожок|пудинг|сырок/.test(text)) return "dairy";
+  if (/бургер|чизбургер|гамбургер|картофель фри|наггетс|воппер|стрипс|пицц|шаурм|донер|хот-дог|kfc|rostic|burger king|додо|вкусно/.test(text)) return "fastfood";
+  if (/батончик|чипс|сухар|шоколад|печенье|сникерс|твикс|марс|баунти|kitkat|круассан|пончик|торт|морожен/.test(text)) return "snacks";
+  if (/куриц|индей|говяд|рыб|тунец|яйц|протеин|фарш|стейк|печень|сердечк/.test(text)) return "protein";
+  if (/суп|борщ|плов|оливье|цезарь|пюре|пельмени|вареники|сырники|блины|паста|лазанья|омлет|салат|гречка|рис|макароны|ролл|поке|рамен|том ям/.test(text)) return "ready";
+  return "all";
 }
 
 function foodRow(food) {
@@ -817,7 +1025,7 @@ function foodRow(food) {
     <button class="food-row" data-food='${escapeAttr(JSON.stringify(food))}'>
       <div>
         <h3>${escapeHtml(food.name)}</h3>
-        <p>${fmt(food.kcal)} ккал / 100 г${brand} · ${escapeHtml(food.source || "база")}</p>
+        <p>${fmt(food.kcal)} ${ui("ккал", "kcal")} / 100 ${ui("г", "g")}${brand} · ${escapeHtml(food.source || ui("база", "library"))}</p>
       </div>
       <span class="kcal-chip">+</span>
     </button>
@@ -840,15 +1048,15 @@ async function openBarcodeScanner() {
   let stream = null;
   let active = true;
   openModal(`
-    <div class="section-title"><div><h2>Сканер штрихкода</h2><p>наведи камеру на упаковку продукта</p></div></div>
+    <div class="section-title"><div><h2>${ui("Сканер штрихкода", "Barcode scanner")}</h2><p>${ui("наведи камеру на упаковку продукта", "point the camera at the package")}</p></div></div>
     <div class="barcode-box stack">
       <video id="barcode-video" autoplay muted playsinline></video>
-      <p id="barcode-status" class="mini-note">Запрашиваю доступ к камере...</p>
+      <p id="barcode-status" class="mini-note">${ui("Запрашиваю доступ к камере...", "Requesting camera access...")}</p>
       <form id="barcode-manual" class="stack">
-        <div class="field"><label>Или введи штрихкод вручную</label><input name="barcode" inputmode="numeric" autocomplete="off" placeholder="460..." /></div>
-        <button class="button secondary">Найти по коду</button>
+        <div class="field"><label>${ui("Или введи штрихкод вручную", "Or enter barcode manually")}</label><input name="barcode" inputmode="numeric" autocomplete="off" placeholder="460..." /></div>
+        <button class="button secondary">${ui("Найти по коду", "Find by code")}</button>
       </form>
-      <button type="button" class="button secondary" data-close>Закрыть</button>
+      <button type="button" class="button secondary" data-close>${ui("Закрыть", "Close")}</button>
     </div>
   `, () => {
     active = false;
@@ -867,7 +1075,7 @@ async function openBarcodeScanner() {
   const status = document.querySelector("#barcode-status");
   const video = document.querySelector("#barcode-video");
   if (!("BarcodeDetector" in window) || !navigator.mediaDevices?.getUserMedia) {
-    status.textContent = "Камера для штрихкодов недоступна в этом браузере. Введи код вручную.";
+    status.textContent = ui("Камера для штрихкодов недоступна в этом браузере. Введи код вручную.", "Barcode camera is unavailable in this browser. Enter the code manually.");
     return;
   }
 
@@ -876,7 +1084,7 @@ async function openBarcodeScanner() {
     video.srcObject = stream;
     await video.play();
     const detector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
-    status.textContent = "Сканирую... держи код в рамке.";
+    status.textContent = ui("Сканирую... держи код в рамке.", "Scanning... keep the code in frame.");
     const scan = async () => {
       if (!active || !document.body.contains(video)) return;
       try {
@@ -888,13 +1096,13 @@ async function openBarcodeScanner() {
           return;
         }
       } catch {
-        status.textContent = "Не могу распознать кадр. Попробуй ярче осветить упаковку.";
+        status.textContent = ui("Не могу распознать кадр. Попробуй ярче осветить упаковку.", "Cannot read this frame. Try better lighting.");
       }
       requestAnimationFrame(scan);
     };
     requestAnimationFrame(scan);
   } catch {
-    status.textContent = "Не получил доступ к камере. Можно ввести код вручную.";
+    status.textContent = ui("Не получил доступ к камере. Можно ввести код вручную.", "Camera access failed. You can enter the code manually.");
   }
 }
 
@@ -904,7 +1112,7 @@ async function handleBarcode(code) {
   const input = document.querySelector("#search");
   const results = document.querySelector("#results");
   if (input) input.value = code;
-  if (results) results.innerHTML = `<div class="card">Ищу товар по штрихкоду ${escapeHtml(code)}...</div>`;
+  if (results) results.innerHTML = `<div class="card">${ui("Ищу товар по штрихкоду", "Searching barcode")} ${escapeHtml(code)}...</div>`;
   const products = await searchExternalFood(code);
   if (products.length) {
     if (results) results.innerHTML = products.map(foodRow).join("");
@@ -912,8 +1120,8 @@ async function handleBarcode(code) {
     openAddFood(products[0]);
     return;
   }
-  if (results) results.innerHTML = `<div class="card empty">Штрихкод не найден. Добавь продукт вручную, он сохранится в личной библиотеке.</div>`;
-  toast("Товар не найден в общей базе");
+  if (results) results.innerHTML = `<div class="card empty">${ui("Штрихкод не найден. Добавь продукт вручную, он сохранится в личной библиотеке.", "Barcode not found. Add the product manually and it will be saved to your library.")}</div>`;
+  toast(ui("Товар не найден в общей базе", "Product not found in shared library"));
 }
 
 function openAddFood(food) {
@@ -921,10 +1129,10 @@ function openAddFood(food) {
   openModal(`
     <div class="section-title"><div><h2>${escapeHtml(food.name)}</h2><p>${escapeHtml(food.brand || food.source || "")}</p></div></div>
     <form id="add-food-form" class="stack">
-      ${numberField("grams", "Сколько граммов", defaultGrams, String(defaultGrams))}
-      ${timeField("time", "Время приема", currentTime())}
-      <button class="button">Добавить в дневник</button>
-      <button type="button" class="button secondary" data-close>Отмена</button>
+      ${numberField("grams", ui("Сколько граммов", "How many grams"), defaultGrams, String(defaultGrams))}
+      ${timeField("time", ui("Время приема", "Meal time"), currentTime())}
+      <button class="button">${ui("Добавить в дневник", "Add to diary")}</button>
+      <button type="button" class="button secondary" data-close>${ui("Отмена", "Cancel")}</button>
     </form>
   `);
   document.querySelector("#add-food-form").addEventListener("submit", event => {
@@ -958,19 +1166,19 @@ function addFood(food, grams, time = currentTime()) {
 
 function openCustomFood() {
   openModal(`
-    <div class="section-title"><div><h2>Свой продукт</h2><p>данные на 100 г</p></div></div>
+    <div class="section-title"><div><h2>${ui("Свой продукт", "Custom food")}</h2><p>${ui("данные на 100 г", "values per 100 g")}</p></div></div>
     <form id="custom-food-form" class="stack">
-      <div class="field"><label>Название</label><input name="name" required placeholder="Например: домашний сырник" /></div>
-      <div class="field"><label>Бренд</label><input name="brand" placeholder="необязательно" /></div>
+      <div class="field"><label>${ui("Название", "Name")}</label><input name="name" required placeholder="${ui("Например: домашний сырник", "Example: homemade pancakes")}" /></div>
+      <div class="field"><label>${ui("Бренд", "Brand")}</label><input name="brand" placeholder="${ui("необязательно", "optional")}" /></div>
       <div class="form-grid">
-        ${numberField("kcal", "Ккал", "", "230")}
-        ${numberField("protein", "Белки", "", "14")}
-        ${numberField("fat", "Жиры", "", "10")}
-        ${numberField("carbs", "Углеводы", "", "21")}
-        ${numberField("grams", "Съедено, г", 100, "100")}
-        ${timeField("time", "Время приема", currentTime())}
+        ${numberField("kcal", ui("Ккал", "Kcal"), "", "230")}
+        ${numberField("protein", ui("Белки", "Protein"), "", "14")}
+        ${numberField("fat", ui("Жиры", "Fat"), "", "10")}
+        ${numberField("carbs", ui("Углеводы", "Carbs"), "", "21")}
+        ${numberField("grams", ui("Съедено, г", "Eaten, g"), 100, "100")}
+        ${timeField("time", ui("Время приема", "Meal time"), currentTime())}
       </div>
-      <button class="button">Сохранить и добавить</button>
+      <button class="button">${ui("Сохранить и добавить", "Save and add")}</button>
     </form>
   `);
   document.querySelector("#custom-food-form").addEventListener("submit", event => {
@@ -992,7 +1200,7 @@ function openCustomFood() {
     addFood(food, grams, form.get("time"));
     saveState();
     closeModal();
-    toast("Блюдо сохранено в библиотеку");
+    toast(ui("Блюдо сохранено в библиотеку", "Food saved to library"));
   });
 }
 
@@ -1163,7 +1371,9 @@ function aiEstimateView(preview, estimate) {
 function saveProfile(event) {
   event.preventDefault();
   const form = new FormData(event.target);
+  const previous = state.profile || {};
   const profile = {
+    ...previous,
     accountName: String(form.get("accountName") || "").trim(),
     language: form.get("language") || "ru",
     sex: form.get("sex"),
@@ -1173,13 +1383,7 @@ function saveProfile(event) {
     targetWeight: Number(form.get("targetWeight")),
     planDays: Number(form.get("planDays")),
     activity: form.get("activity"),
-    goal: form.get("goal"),
-    chest: optionalNumber(form.get("chest")),
-    waist: optionalNumber(form.get("waist")),
-    hips: optionalNumber(form.get("hips")),
-    neck: optionalNumber(form.get("neck")),
-    biceps: optionalNumber(form.get("biceps")),
-    thigh: optionalNumber(form.get("thigh"))
+    goal: form.get("goal")
   };
   profile.targets = calcTargets(profile);
   state.profile = profile;
@@ -1190,20 +1394,46 @@ function saveProfile(event) {
   showRegistrationLoading(profile.plan?.note);
 }
 
+function saveMeasurementsOnly(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const profile = {
+    ...(state.profile || {
+      accountName: state.account?.name || "Аккаунт EliteCalorie",
+      language: state.language || "ru",
+      sex: "male",
+      age: 28,
+      height: 178,
+      targetWeight: Number(form.get("weight") || 72),
+      planDays: 90,
+      activity: "low",
+      goal: "keep"
+    })
+  };
+
+  measurementKeys().forEach((key) => {
+    profile[key] = optionalNumber(form.get(key));
+  });
+  if (Number(form.get("weight")) > 0) profile.weight = Number(form.get("weight"));
+  profile.targets = calcTargets(profile);
+  state.profile = profile;
+  saveMeasurement(profile);
+  saveState();
+  render();
+  toast(ui("Замеры сохранены", "Measurements saved"));
+}
+
 function saveMeasurement(profile) {
   state.measurements ||= [];
   const record = {
     id: crypto.randomUUID(),
     date: todayKey(),
     timestamp: new Date().toISOString(),
-    weight: Number(profile.weight || 0),
-    chest: profile.chest,
-    waist: profile.waist,
-    hips: profile.hips,
-    neck: profile.neck,
-    biceps: profile.biceps,
-    thigh: profile.thigh
+    weight: Number(profile.weight || 0)
   };
+  measurementKeys().forEach((key) => {
+    record[key] = profile[key];
+  });
   const existing = state.measurements.findIndex(item => item.date === record.date);
   if (existing >= 0) {
     state.measurements[existing] = { ...state.measurements[existing], ...record, id: state.measurements[existing].id };
@@ -1211,6 +1441,24 @@ function saveMeasurement(profile) {
     state.measurements.push(record);
   }
   state.measurements = state.measurements.slice(-180);
+}
+
+function measurementKeys() {
+  return [
+    "neck",
+    "shoulders",
+    "chest",
+    "waist",
+    "hips",
+    "leftBiceps",
+    "rightBiceps",
+    "leftForearm",
+    "rightForearm",
+    "leftThigh",
+    "rightThigh",
+    "leftCalf",
+    "rightCalf"
+  ];
 }
 
 function optionalNumber(value) {
@@ -1221,19 +1469,25 @@ function optionalNumber(value) {
 function showRegistrationLoading(note) {
   $app.innerHTML = `
     <section class="calculation-screen">
-      <div class="calc-stage">
-        <div class="calc-orbit"></div>
-        <div class="calc-scan"></div>
-        <div class="brand-mark">E</div>
+      <div class="elite-loader">
+        <div class="calc-stage">
+          <div class="calc-orbit"></div>
+          <div class="calc-orbit second"></div>
+          <div class="calc-scan"></div>
+          <div class="brand-mark">E</div>
+        </div>
+        <div class="calc-pulse-lines"><i></i><i></i><i></i></div>
       </div>
       <p class="eyebrow">EliteCalorie Intelligence</p>
-      <h2>Собираю персональный план</h2>
+      <h2>${ui("Собираю персональный план", "Building your personal plan")}</h2>
       <div class="calc-steps">
-        <span>Метаболизм</span>
-        <span>Цель</span>
-        <span>КБЖУ</span>
+        <span>${ui("Метаболизм", "Metabolism")}</span>
+        <span>${ui("Цель", "Goal")}</span>
+        <span>${ui("Активность", "Activity")}</span>
+        <span>${ui("КБЖУ", "Macros")}</span>
       </div>
-      ${note ? `<p class="calc-note">${escapeHtml(note)}</p>` : `<p class="calc-note">План готовится под ваш темп, вес и активность.</p>`}
+      <div class="calc-progress"><i></i></div>
+      ${note ? `<p class="calc-note">${escapeHtml(note)}</p>` : `<p class="calc-note">${ui("План готовится под ваш темп, вес и активность.", "The plan is tuned to your pace, weight, and activity.")}</p>`}
     </section>
   `;
   setTimeout(() => {
@@ -1244,12 +1498,12 @@ function showRegistrationLoading(note) {
     } else {
       toast("Норма КБЖУ рассчитана");
     }
-  }, 3600);
+  }, 4300);
 }
 
 function openPlanNotice(note) {
   openModal(`
-    <div class="section-title"><div><h2>Срок плана изменен</h2><p>EliteCalorie поставил безопасный темп</p></div></div>
+    <div class="section-title"><div><h2>${ui("Срок плана изменен", "Plan duration adjusted")}</h2><p>${ui("EliteCalorie поставил безопасный темп", "EliteCalorie selected a safer pace")}</p></div></div>
     <div class="stack">
       <div class="card notice-card">${escapeHtml(note)}</div>
       <button class="button" data-close>OK</button>
