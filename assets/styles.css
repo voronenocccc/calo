@@ -184,6 +184,10 @@ button {
   position: relative;
 }
 
+.ring.over {
+  background: conic-gradient(var(--rose) calc(var(--value) * 1%), rgba(255, 255, 255, 0.08) 0);
+}
+
 .ring::before {
   content: "";
   width: 94px;
@@ -208,6 +212,15 @@ button {
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
+}
+
+.ring-inner em {
+  display: block;
+  margin-top: 3px;
+  color: var(--rose);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .macro-grid {
@@ -237,6 +250,19 @@ button {
   font-size: 15px;
   line-height: 1.2;
   white-space: nowrap;
+}
+
+.macro em {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.macro.over em {
+  color: var(--rose);
 }
 
 .tabs {
@@ -455,6 +481,23 @@ button {
   font-size: 12px;
 }
 
+.profile-block-title {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.profile-block-title strong {
+  display: block;
+  font-size: 15px;
+}
+
+.profile-block-title span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .plan-card span {
   color: var(--green);
   font-size: 11px;
@@ -553,6 +596,13 @@ button {
   margin-bottom: 12px;
 }
 
+.library-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: stretch;
+}
+
 .library-rail > div:first-child {
   display: flex;
   justify-content: space-between;
@@ -582,6 +632,11 @@ button {
   background: rgba(255, 255, 255, 0.07);
   font-size: 12px;
   font-weight: 800;
+}
+
+.library-empty {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .actions {
@@ -654,7 +709,7 @@ button {
 
 .searchbar {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -668,6 +723,29 @@ button {
   place-items: center;
   color: var(--text);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.icon-button svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.barcode-box video {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #05070a;
+  object-fit: cover;
+}
+
+.notice-card {
+  color: var(--amber);
+  line-height: 1.5;
 }
 
 .modal-backdrop {
@@ -746,18 +824,46 @@ button {
   gap: 16px;
 }
 
-.calc-orbit {
+.calc-stage {
   width: 132px;
   aspect-ratio: 1;
-  border-radius: 999px;
+  position: relative;
   display: grid;
   place-items: center;
-  background: conic-gradient(from 0deg, var(--green), var(--cyan), rgba(255, 255, 255, 0.08), var(--green));
-  animation: spin 1.4s linear infinite;
 }
 
-.calc-orbit .brand-mark {
-  animation: counter-spin 1.4s linear infinite;
+.calc-stage .brand-mark {
+  position: relative;
+  z-index: 3;
+  border-radius: 24px;
+  animation: pulse-mark 1.8s ease-in-out infinite;
+}
+
+.calc-orbit,
+.calc-scan {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+}
+
+.calc-orbit {
+  background: conic-gradient(from 0deg, var(--green), var(--cyan), rgba(255, 255, 255, 0.08), var(--green));
+  animation: spin 1.25s linear infinite;
+}
+
+.calc-orbit::after {
+  content: "";
+  position: absolute;
+  inset: 11px;
+  border-radius: inherit;
+  background: #090d12;
+}
+
+.calc-scan {
+  inset: 18px;
+  border: 1px solid rgba(70, 240, 162, 0.42);
+  box-shadow: 0 0 34px rgba(65, 215, 255, 0.2);
+  animation: scan-pulse 1.6s ease-in-out infinite;
 }
 
 .calculation-screen h2 {
@@ -799,6 +905,123 @@ button {
   to { transform: rotate(-360deg); }
 }
 
+@keyframes pulse-mark {
+  0%, 100% { transform: scale(1); box-shadow: 0 18px 45px rgba(70, 240, 162, 0.24); }
+  50% { transform: scale(1.06); box-shadow: 0 24px 70px rgba(65, 215, 255, 0.3); }
+}
+
+@keyframes scan-pulse {
+  0%, 100% { transform: scale(0.78); opacity: 0.48; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+
+.measurement-guide {
+  display: grid;
+  grid-template-columns: 1fr 170px;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.measurement-guide p,
+.progress-card p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.measurement-guide svg {
+  width: 100%;
+  max-width: 170px;
+}
+
+.measurement-guide text {
+  fill: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.body-line {
+  fill: rgba(255, 255, 255, 0.06);
+  stroke: rgba(247, 251, 255, 0.74);
+  stroke-width: 3;
+}
+
+.measure-line {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 5 6;
+}
+
+.progress-card {
+  margin-top: 12px;
+}
+
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.progress-head span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.progress-head strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 24px;
+}
+
+.progress-head em {
+  max-width: 220px;
+  color: var(--amber);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.weight-bars {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 7px;
+  align-items: end;
+  min-height: 112px;
+  margin-top: 14px;
+}
+
+.weight-bar {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  min-width: 0;
+}
+
+.weight-bar i {
+  width: 100%;
+  max-width: 22px;
+  min-height: 18px;
+  border-radius: 999px 999px 6px 6px;
+  background: linear-gradient(180deg, var(--cyan), var(--green));
+}
+
+.weight-bar b {
+  color: var(--text);
+  font-size: 10px;
+}
+
 @media (max-width: 420px) {
   .hero-head {
     grid-template-columns: 1fr;
@@ -809,7 +1032,9 @@ button {
   }
 
   .form-grid,
-  .actions {
+  .actions,
+  .library-grid,
+  .measurement-guide {
     grid-template-columns: 1fr;
   }
 
