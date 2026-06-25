@@ -6,7 +6,8 @@ tg?.expand();
 
 const CONFIG = {
   aiEndpoint: localStorage.getItem("elite_ai_endpoint") || "https://elitecalorie-ai.nikitosv2401.workers.dev/",
-  foodEndpoint: localStorage.getItem("elite_food_endpoint") || "https://elitecalorie-ai.nikitosv2401.workers.dev/food"
+  foodEndpoint: localStorage.getItem("elite_food_endpoint") || "https://elitecalorie-ai.nikitosv2401.workers.dev/food",
+  subscriptionEndpoint: localStorage.getItem("elite_subscription_endpoint") || "https://elitecalorie-telegramf.nikitosv2401.workers.dev/subscription"
 };
 
 const LEGACY_MEAL_TIMES = {
@@ -103,20 +104,26 @@ function loadState() {
     profile: null,
     account: telegramAccount(),
     diary: {},
+    water: {},
     customFoods: [],
     favoriteFoods: [],
     measurements: [],
+    subscription: { trialStartedAt: new Date().toISOString(), premiumUntil: "", plan: "trial" },
     language: "ru",
-    settings: { aiEndpoint: CONFIG.aiEndpoint, foodEndpoint: CONFIG.foodEndpoint }
+    settings: { aiEndpoint: CONFIG.aiEndpoint, foodEndpoint: CONFIG.foodEndpoint, subscriptionEndpoint: CONFIG.subscriptionEndpoint }
   };
   try {
     const loaded = { ...fallback, ...JSON.parse(localStorage.getItem("elite_calorie_state") || "{}") };
     loaded.settings ||= {};
     loaded.settings.aiEndpoint ||= CONFIG.aiEndpoint;
     loaded.settings.foodEndpoint ||= CONFIG.foodEndpoint;
+    loaded.settings.subscriptionEndpoint ||= CONFIG.subscriptionEndpoint;
+    loaded.water ||= {};
     loaded.customFoods ||= [];
     loaded.favoriteFoods ||= [];
     loaded.measurements ||= [];
+    loaded.subscription ||= { trialStartedAt: new Date().toISOString(), premiumUntil: "", plan: "trial" };
+    loaded.subscription.trialStartedAt ||= new Date().toISOString();
     loaded.language ||= loaded.profile?.language || "ru";
     migrateDiary(loaded);
     return loaded;
@@ -230,7 +237,35 @@ function totals() {
 }
 
 function targets() {
+  if (state.profile?.manualTargets?.enabled) return state.profile.manualTargets;
   return state.profile?.targets || { kcal: 2200, protein: 130, fat: 70, carbs: 250 };
+}
+
+function waterByDate(key = selectedDateKey) {
+  state.water ||= {};
+  state.water[key] ||= { ml: 0 };
+  return state.water[key];
+}
+
+function waterTarget() {
+  return Number(state.profile?.waterTarget || Math.round((state.profile?.weight || 75) * 35 / 50) * 50 || 2500);
+}
+
+function subscriptionStatus() {
+  const now = Date.now();
+  const trialStarted = new Date(state.subscription?.trialStartedAt || new Date().toISOString()).getTime();
+  const trialUntil = trialStarted + 3 * 24 * 60 * 60 * 1000;
+  const premiumUntil = state.subscription?.premiumUntil ? new Date(state.subscription.premiumUntil).getTime() : 0;
+  if (state.subscription?.lifetime || state.subscription?.plan === "lifetime") {
+    return { active: true, kind: "lifetime", until: new Date("2099-12-31T23:59:59.000Z"), daysLeft: Infinity };
+  }
+  if (premiumUntil > now) {
+    return { active: true, kind: "premium", until: new Date(premiumUntil), daysLeft: Math.ceil((premiumUntil - now) / 86400000) };
+  }
+  if (trialUntil > now) {
+    return { active: true, kind: "trial", until: new Date(trialUntil), daysLeft: Math.ceil((trialUntil - now) / 86400000) };
+  }
+  return { active: false, kind: "expired", until: new Date(trialUntil), daysLeft: 0 };
 }
 
 function calcTargets(profile) {
@@ -340,7 +375,10 @@ function homeView(total, target, progress) {
   const entries = byDate().slice().sort(sortByTimeDesc);
   const totalEntries = allDayEntries().length;
   const current = selectedDate();
+  const water = waterByDate();
+  const subscription = subscriptionStatus();
   return `
+    ${subscription.active ? "" : subscriptionGate()}
     <section class="hero">
       <div class="hero-head">
         <div>
@@ -357,11 +395,25 @@ function homeView(total, target, progress) {
         ${macro(ui("Жиры", "Fat"), total.fat, target.fat, ui("г", "g"))}
         ${macro(ui("Углеводы", "Carbs"), total.carbs, target.carbs, ui("г", "g"))}
       </div>
+      <div class="hero-subline">
+        <span>${subscriptionLabel(subscription)}</span>
+        <button data-tab-jump="profile">${ui("Управлять", "Manage")}</button>
+      </div>
     </section>
+    ${waterView(water)}
+    ${snackView(total, target)}
     <section class="section">
       <div class="section-title">
         <div><h2>${t("diary")}</h2><p>${dayTitle(current)} · ${totalEntries ? `${totalEntries} ${ui("записей", "entries")}` : ui("пока пусто", "empty")}</p></div>
-        <button class="pill" data-action="clear-day">${t("clear")}</button>
+        <div class="title-actions">
+          <button class="pill" data-action="open-calendar">${ui("Календарь", "Calendar")}</button>
+          <button class="pill" data-action="clear-day">${t("clear")}</button>
+        </div>
+      </div>
+      <div class="calendar-nav">
+        <button data-action="shift-week" data-days="-7">← ${ui("неделя", "week")}</button>
+        <strong>${weekRangeTitle()}</strong>
+        <button data-action="shift-week" data-days="7">${ui("неделя", "week")} →</button>
       </div>
       <div class="day-strip">
         ${weekDays().map(dayButton).join("")}
@@ -376,6 +428,50 @@ function homeView(total, target, progress) {
       <div class="stack">
         ${entries.length ? entries.map(entryRow).join("") : `<div class="card empty">${t("emptyDiary")}</div>`}
       </div>
+    </section>
+  `;
+}
+
+function waterView(water) {
+  const target = waterTarget();
+  const percent = Math.min(100, Math.round((Number(water.ml || 0) / target) * 100));
+  return `
+    <section class="compact-panel water-panel">
+      <div>
+        <span>${ui("Вода", "Water")}</span>
+        <strong>${fmt(water.ml)} / ${fmt(target)} мл</strong>
+      </div>
+      <div class="water-bar"><i style="width:${percent}%"></i></div>
+      <div class="water-actions">
+        <button data-water="250">+250</button>
+        <button data-water="500">+500</button>
+        <button data-water="-250">-250</button>
+      </div>
+    </section>
+  `;
+}
+
+function snackView(total, target) {
+  const remaining = Math.round(Number(target.kcal || 0) - Number(total.kcal || 0));
+  const suggestions = snackSuggestions(remaining);
+  return `
+    <section class="compact-panel snack-panel">
+      <div class="snack-head">
+        <div><span>${ui("Перекус", "Snack")}</span><strong>${remaining > 0 ? `${remaining} ${ui("ккал осталось", "kcal left")}` : ui("лимит уже закрыт", "target reached")}</strong></div>
+      </div>
+      <div class="snack-list">
+        ${suggestions.length ? suggestions.map(item => `<button data-food='${escapeAttr(JSON.stringify({ ...item.food, defaultGrams: item.grams }))}'><span>${escapeHtml(item.food.name)}</span><em>${item.grams} ${ui("г", "g")} · ${fmt(item.kcal)} ${ui("ккал", "kcal")}</em></button>`).join("") : `<p>${ui("Сегодня лучше вода, чай без сахара или легкая прогулка.", "Today choose water, unsweetened tea, or a light walk.")}</p>`}
+      </div>
+    </section>
+  `;
+}
+
+function subscriptionGate() {
+  return `
+    <section class="subscription-gate">
+      <strong>${ui("Пробный период закончился", "Trial ended")}</strong>
+      <span>${ui("Оформи Premium через Telegram Stars: 50 звезд в месяц или 100 звезд за 3 месяца.", "Activate Premium with Telegram Stars: 50 Stars monthly or 100 Stars for 3 months.")}</span>
+      <button data-tab-jump="profile">${ui("Перейти к оплате", "Go to payment")}</button>
     </section>
   `;
 }
@@ -401,6 +497,16 @@ function dayTitle(date) {
   return lang() === "en"
     ? `${labels[date.getDay()]}, ${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`
     : `${labels[date.getDay()]}, ${date.getDate()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function weekRangeTitle() {
+  const days = weekDays();
+  const first = days[0];
+  const last = days[6];
+  const format = (date) => lang() === "en"
+    ? `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`
+    : `${date.getDate()}.${String(date.getMonth() + 1).padStart(2, "0")}`;
+  return `${format(first)} - ${format(last)}`;
 }
 
 function macro(label, current, target, unit) {
@@ -488,6 +594,35 @@ function favoriteQuickFoods() {
   return names.map(name => FOOD_DB.find(food => normalizeText(food.name) === normalizeText(name))).filter(Boolean);
 }
 
+function snackSuggestions(remaining) {
+  if (remaining < 80) return [];
+  const desired = Math.min(Math.max(remaining, 120), 420);
+  const snackNames = [
+    "Йогурт греческий",
+    "Творог 5%",
+    "Банан",
+    "Яблоко",
+    "Протеиновый батончик",
+    "Сырок глазированный",
+    "Хлебцы гречневые",
+    "Кефир 1%",
+    "Омлет",
+    "Сэндвич с курицей"
+  ];
+  return snackNames
+    .map(name => FOOD_DB.find(food => normalizeText(food.name).includes(normalizeText(name))))
+    .filter(Boolean)
+    .map(food => {
+      const defaultGrams = defaultGramsFor(food);
+      const defaultKcal = food.kcal * defaultGrams / 100;
+      const grams = defaultKcal <= desired ? defaultGrams : Math.max(30, Math.floor((desired / food.kcal) * 100 / 5) * 5);
+      return { food, grams, kcal: food.kcal * grams / 100 };
+    })
+    .filter(item => item.kcal <= remaining + 30)
+    .sort((a, b) => Math.abs(a.kcal - desired) - Math.abs(b.kcal - desired))
+    .slice(0, 4);
+}
+
 function photoView() {
   return `
     <section class="section">
@@ -495,10 +630,13 @@ function photoView() {
         <div><h2>${t("photo")}</h2><p>${t("photoCaption")}</p></div>
       </div>
       <div class="card photo-box">
-        <div class="field">
-          <label>${ui("Фото блюда или этикетки", "Dish or label photo")}</label>
-          <input id="photo-input" type="file" accept="image/*" />
+        <div class="photo-source-actions">
+          <input id="photo-camera-input" class="visually-hidden" type="file" accept="image/*" capture="environment" />
+          <input id="photo-gallery-input" class="visually-hidden" type="file" accept="image/*" />
+          <button class="button" data-action="take-photo" type="button">${ui("Сфоткать сейчас", "Take photo now")}</button>
+          <button class="button secondary" data-action="pick-photo" type="button">${ui("Выбрать из галереи", "Choose from gallery")}</button>
         </div>
+        <p id="photo-file-name" class="mini-note">${ui("На Android кнопка камеры откроет съемку сразу, если Telegram WebView разрешает доступ.", "On Android, the camera button opens capture directly when Telegram WebView allows it.")}</p>
         <div class="field">
           <label>${ui("Уточнение", "Note")}</label>
           <textarea id="photo-note" placeholder="${ui("Например: съел 180 г; или курица 150 г, гречка половина тарелки", "Example: ate 180 g, chicken 150 g, half a plate of buckwheat")}"></textarea>
@@ -545,6 +683,7 @@ function profilePaneButton(id, label) {
 function accountPane(p) {
   const plan = state.profile?.plan;
   return `
+    ${subscriptionPanel()}
     <form id="profile-form" class="profile-panel stack">
       <div class="profile-hero">
         <div class="profile-avatar">${escapeHtml((state.account?.name || "E").trim().slice(0, 1).toUpperCase())}</div>
@@ -576,8 +715,24 @@ function accountPane(p) {
           ${numberField("weight", ui("Текущий вес, кг", "Current weight, kg"), p.weight, "72")}
           ${numberField("targetWeight", ui("Целевой вес, кг", "Target weight, kg"), p.targetWeight, "68")}
           ${numberField("planDays", ui("Срок, дней", "Plan days"), p.planDays, "90")}
+          ${numberField("waterTarget", ui("Вода в день, мл", "Daily water, ml"), p.waterTarget || waterTarget(), "2500")}
           ${selectField("activity", ui("Активность", "Activity"), activityOptions(), p.activity)}
           ${selectField("goal", ui("Цель", "Goal"), goalOptions(), p.goal)}
+        </div>
+      </div>
+      <div class="form-section">
+        <div class="form-section-head">
+          <div><strong>${ui("Своя норма КБЖУ", "Custom macro target")}</strong><span>${ui("если хочешь выставить значения вручную", "set your own numbers manually")}</span></div>
+        </div>
+        <label class="toggle-row">
+          <input name="manualEnabled" type="checkbox" ${p.manualTargets?.enabled ? "checked" : ""} />
+          <span>${ui("Использовать мои значения вместо расчета", "Use my values instead of calculated target")}</span>
+        </label>
+        <div class="form-grid">
+          ${numberField("manualKcal", ui("Ккал", "Kcal"), p.manualTargets?.kcal || targets().kcal, "2200")}
+          ${numberField("manualProtein", ui("Белки, г", "Protein, g"), p.manualTargets?.protein || targets().protein, "150")}
+          ${numberField("manualFat", ui("Жиры, г", "Fat, g"), p.manualTargets?.fat || targets().fat, "70")}
+          ${numberField("manualCarbs", ui("Углеводы, г", "Carbs, g"), p.manualTargets?.carbs || targets().carbs, "230")}
         </div>
       </div>
       <button class="button">${t("saveProfile")}</button>
@@ -591,6 +746,37 @@ function accountPane(p) {
       </div>
     ` : ""}
   `;
+}
+
+function subscriptionPanel() {
+  const status = subscriptionStatus();
+  return `
+    <section class="subscription-panel">
+      <div>
+        <span>${status.kind === "trial" ? ui("Пробный период", "Trial") : status.kind === "premium" || status.kind === "lifetime" ? "Premium" : ui("Подписка", "Subscription")}</span>
+        <strong>${status.kind === "lifetime" ? ui("навсегда", "lifetime") : status.active ? `${status.daysLeft} ${ui("дн. осталось", "days left")}` : ui("Нужна оплата", "Payment required")}</strong>
+        <p>${ui("Первые 3 дня бесплатно. Дальше Premium через Telegram Stars.", "First 3 days are free. Then Premium via Telegram Stars.")}</p>
+      </div>
+      <div class="subscription-actions">
+        <button data-subscribe-plan="month">50 ⭐ / ${ui("месяц", "month")}</button>
+        <button data-subscribe-plan="quarter">100 ⭐ / 3 ${ui("мес.", "mo")}</button>
+      </div>
+      <form id="promo-form" class="promo-form">
+        <label>${ui("Промокод", "Promo code")}</label>
+        <div>
+          <input name="promo" autocomplete="one-time-code" placeholder="${ui("Введи код", "Enter code")}" />
+          <button>${ui("Активировать", "Activate")}</button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
+function subscriptionLabel(subscription) {
+  if (subscription.kind === "trial") return `${ui("Пробный период", "Trial")} · ${subscription.daysLeft} ${ui("дн.", "d")}`;
+  if (subscription.kind === "lifetime") return ui("Premium навсегда", "Premium lifetime");
+  if (subscription.kind === "premium") return `${ui("Premium до", "Premium until")} ${subscription.until.toLocaleDateString(lang() === "en" ? "en-US" : "ru-RU")}`;
+  return ui("Нужна подписка", "Subscription needed");
 }
 
 function measurementsPane(p) {
@@ -827,6 +1013,11 @@ function bind() {
     activeTab = btn.dataset.tab;
     render();
   }));
+  document.querySelectorAll("[data-tab-jump]").forEach(btn => btn.addEventListener("click", () => {
+    activeTab = btn.dataset.tabJump;
+    if (activeTab === "profile") profilePane = "account";
+    render();
+  }));
 
   document.querySelector("[data-action='clear-day']")?.addEventListener("click", () => {
     state.diary[selectedDateKey] = [];
@@ -834,6 +1025,13 @@ function bind() {
     render();
     toast("Дневник очищен");
   });
+  document.querySelector("[data-action='open-calendar']")?.addEventListener("click", openCalendar);
+  document.querySelectorAll("[data-action='shift-week']").forEach(btn => btn.addEventListener("click", () => {
+    shiftSelectedDate(Number(btn.dataset.days || 0));
+  }));
+  document.querySelectorAll("[data-water]").forEach(btn => btn.addEventListener("click", () => {
+    addWater(Number(btn.dataset.water || 0));
+  }));
   document.querySelectorAll("[data-day]").forEach(btn => btn.addEventListener("click", () => {
     selectedDateKey = btn.dataset.day;
     saveState();
@@ -870,6 +1068,10 @@ function bind() {
   document.querySelector("[data-action='custom-food']")?.addEventListener("click", openCustomFood);
   document.querySelector("[data-action='scan-barcode']")?.addEventListener("click", openBarcodeScanner);
   document.querySelector("[data-action='measurement-guide']")?.addEventListener("click", openMeasurementGuide);
+  document.querySelector("[data-action='take-photo']")?.addEventListener("click", () => document.querySelector("#photo-camera-input")?.click());
+  document.querySelector("[data-action='pick-photo']")?.addEventListener("click", () => document.querySelector("#photo-gallery-input")?.click());
+  document.querySelector("#photo-camera-input")?.addEventListener("change", handlePhotoPicked);
+  document.querySelector("#photo-gallery-input")?.addEventListener("change", handlePhotoPicked);
   document.querySelectorAll("[data-library-mode]").forEach(btn => btn.addEventListener("click", () => {
     searchMode = btn.dataset.libraryMode;
     state.searchMode = searchMode;
@@ -888,11 +1090,178 @@ function bind() {
     saveState();
     render();
   }));
+  document.querySelectorAll("[data-subscribe-plan]").forEach(btn => btn.addEventListener("click", () => requestSubscriptionInvoice(btn.dataset.subscribePlan)));
+  document.querySelector("#promo-form")?.addEventListener("submit", activatePromoCode);
   document.querySelector("[data-action='analyze-photo']")?.addEventListener("click", analyzePhoto);
   document.querySelectorAll(".library-chip[data-food]").forEach(btn => btn.addEventListener("click", () => openAddFood(JSON.parse(btn.dataset.food))));
   document.querySelectorAll(".quick-picks [data-food]").forEach(btn => btn.addEventListener("click", () => openAddFood(JSON.parse(btn.dataset.food))));
+  document.querySelectorAll(".snack-list [data-food]").forEach(btn => btn.addEventListener("click", () => {
+    const food = JSON.parse(btn.dataset.food);
+    openAddFood(food);
+  }));
   if (activeTab === "search") runSearch();
   document.querySelector("#measurements-form")?.addEventListener("submit", saveMeasurementsOnly);
+}
+
+async function requestSubscriptionInvoice(plan) {
+  const userId = tg?.initDataUnsafe?.user?.id || state.account?.id;
+  if (!userId || userId === "local") {
+    toast(ui("Оплата доступна внутри Telegram.", "Payment is available inside Telegram."));
+    return;
+  }
+  try {
+    const response = await fetch(state.settings.subscriptionEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "invoice", plan, user_id: userId })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "invoice failed");
+    toast(ui("Счет отправлен в чат с ботом.", "Invoice sent to the bot chat."));
+  } catch {
+    toast(ui("Не удалось отправить счет. Напиши боту /subscribe.", "Could not send invoice. Message /subscribe to the bot."));
+  }
+}
+
+async function activatePromoCode(event) {
+  event.preventDefault();
+  const code = new FormData(event.target).get("promo")?.trim();
+  const userId = tg?.initDataUnsafe?.user?.id || state.account?.id;
+  if (!code) {
+    toast(ui("Введи промокод.", "Enter a promo code."));
+    return;
+  }
+  if (!userId || userId === "local") {
+    toast(ui("Промокод активируется внутри Telegram.", "Promo codes activate inside Telegram."));
+    return;
+  }
+  try {
+    const response = await fetch(state.settings.subscriptionEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "promo", code, user_id: userId })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "promo failed");
+    if (data.subscription) {
+      state.subscription.premiumUntil = data.subscription.until || state.subscription.premiumUntil;
+      state.subscription.plan = data.subscription.plan || "lifetime";
+      state.subscription.lifetime = Boolean(data.subscription.lifetime);
+      saveState();
+    }
+    toast(ui("Premium навсегда активирован.", "Premium lifetime activated."));
+    render();
+  } catch {
+    toast(ui("Промокод не найден или не активен.", "Promo code not found or inactive."));
+  }
+}
+
+async function syncSubscription() {
+  const userId = tg?.initDataUnsafe?.user?.id || state.account?.id;
+  if (!userId || userId === "local" || !state.settings.subscriptionEndpoint) return;
+  try {
+    const params = new URLSearchParams({ user_id: userId });
+    const response = await fetch(`${state.settings.subscriptionEndpoint}?${params}`);
+    const data = await response.json();
+    if (data.subscription) {
+      if (data.subscription.trialStartedAt) state.subscription.trialStartedAt = data.subscription.trialStartedAt;
+      if (data.subscription.until) state.subscription.premiumUntil = data.subscription.until;
+      state.subscription.plan = data.subscription.plan || state.subscription.plan || "trial";
+      state.subscription.lifetime = Boolean(data.subscription.lifetime || data.subscription.plan === "lifetime");
+      saveState();
+      render();
+    }
+  } catch {
+    // Subscription sync is best-effort; the local trial still works offline.
+  }
+}
+
+function shiftSelectedDate(days) {
+  const d = selectedDate();
+  d.setDate(d.getDate() + days);
+  selectedDateKey = dateToKey(d);
+  saveState();
+  render();
+}
+
+function addWater(delta) {
+  const water = waterByDate();
+  water.ml = Math.max(0, Number(water.ml || 0) + delta);
+  saveState();
+  render();
+}
+
+function openCalendar() {
+  const shown = selectedDate();
+  renderCalendarModal(shown.getFullYear(), shown.getMonth());
+}
+
+function renderCalendarModal(year, month) {
+  const cursor = new Date(year, month, 1);
+  const monthLabel = cursor.toLocaleDateString(lang() === "en" ? "en-US" : "ru-RU", { month: "long", year: "numeric" });
+  const startOffset = (cursor.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [
+    ...Array.from({ length: startOffset }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => new Date(year, month, index + 1))
+  ];
+  openModal(`
+    <div class="section-title"><div><h2>${ui("Календарь", "Calendar")}</h2><p>${ui("выбери любой день дневника", "choose any diary date")}</p></div></div>
+    <div class="month-calendar">
+      <div class="month-calendar-head">
+        <button data-calendar-month="-1" type="button">←</button>
+        <strong>${escapeHtml(monthLabel)}</strong>
+        <button data-calendar-month="1" type="button">→</button>
+      </div>
+      <div class="month-weekdays">
+        ${(lang() === "en" ? ["M", "T", "W", "T", "F", "S", "S"] : ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]).map(day => `<span>${day}</span>`).join("")}
+      </div>
+      <div class="month-grid">
+        ${cells.map(date => date ? monthDayButton(date) : `<span></span>`).join("")}
+      </div>
+    </div>
+    <form id="calendar-form" class="stack">
+      <div class="field"><label>${ui("Дата", "Date")}</label><input name="date" type="date" value="${selectedDateKey}" required /></div>
+      <div class="calendar-shortcuts">
+        <button type="button" data-date-shortcut="-1">${ui("Вчера", "Yesterday")}</button>
+        <button type="button" data-date-shortcut="0">${ui("Сегодня", "Today")}</button>
+        <button type="button" data-date-shortcut="1">${ui("Завтра", "Tomorrow")}</button>
+      </div>
+      <button class="button">${ui("Открыть дату", "Open date")}</button>
+    </form>
+  `);
+  document.querySelectorAll("[data-calendar-month]").forEach(btn => btn.addEventListener("click", () => {
+    renderCalendarModal(year, month + Number(btn.dataset.calendarMonth || 0));
+  }));
+  document.querySelectorAll("[data-calendar-day]").forEach(btn => btn.addEventListener("click", () => {
+    selectedDateKey = btn.dataset.calendarDay;
+    saveState();
+    closeModal();
+    render();
+  }));
+  document.querySelectorAll("[data-date-shortcut]").forEach(btn => btn.addEventListener("click", () => {
+    const d = new Date();
+    d.setDate(d.getDate() + Number(btn.dataset.dateShortcut || 0));
+    document.querySelector("#calendar-form [name='date']").value = dateToKey(d);
+  }));
+  document.querySelector("#calendar-form").addEventListener("submit", event => {
+    event.preventDefault();
+    selectedDateKey = new FormData(event.target).get("date");
+    saveState();
+    closeModal();
+    render();
+  });
+}
+
+function monthDayButton(date) {
+  const key = dateToKey(date);
+  const count = allDayEntries(key).length;
+  return `
+    <button class="${key === selectedDateKey ? "active" : ""}" data-calendar-day="${key}" type="button">
+      <strong>${date.getDate()}</strong>
+      ${count ? `<em>${count}</em>` : ""}
+    </button>
+  `;
 }
 
 function nextDateKey(key) {
@@ -1047,6 +1416,7 @@ async function searchExternalFood(q) {
 async function openBarcodeScanner() {
   let stream = null;
   let active = true;
+  let barcodeControls = null;
   openModal(`
     <div class="section-title"><div><h2>${ui("Сканер штрихкода", "Barcode scanner")}</h2><p>${ui("наведи камеру на упаковку продукта", "point the camera at the package")}</p></div></div>
     <div class="barcode-box stack">
@@ -1060,6 +1430,7 @@ async function openBarcodeScanner() {
     </div>
   `, () => {
     active = false;
+    barcodeControls?.stop?.();
     stream?.getTracks().forEach(track => track.stop());
   });
 
@@ -1074,8 +1445,8 @@ async function openBarcodeScanner() {
 
   const status = document.querySelector("#barcode-status");
   const video = document.querySelector("#barcode-video");
-  if (!("BarcodeDetector" in window) || !navigator.mediaDevices?.getUserMedia) {
-    status.textContent = ui("Камера для штрихкодов недоступна в этом браузере. Введи код вручную.", "Barcode camera is unavailable in this browser. Enter the code manually.");
+  if (!navigator.mediaDevices?.getUserMedia) {
+    status.textContent = ui("Камера недоступна в этом браузере. Введи код вручную.", "Camera is unavailable in this browser. Enter the code manually.");
     return;
   }
 
@@ -1083,26 +1454,53 @@ async function openBarcodeScanner() {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
     video.srcObject = stream;
     await video.play();
-    const detector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
-    status.textContent = ui("Сканирую... держи код в рамке.", "Scanning... keep the code in frame.");
-    const scan = async () => {
-      if (!active || !document.body.contains(video)) return;
-      try {
-        const codes = await detector.detect(video);
-        if (codes.length) {
-          const code = codes[0].rawValue;
-          closeModal();
-          await handleBarcode(code);
-          return;
-        }
-      } catch {
-        status.textContent = ui("Не могу распознать кадр. Попробуй ярче осветить упаковку.", "Cannot read this frame. Try better lighting.");
-      }
-      requestAnimationFrame(scan);
+    const onCode = async (code) => {
+      if (!active || !code) return;
+      active = false;
+      barcodeControls?.stop?.();
+      closeModal();
+      await handleBarcode(code);
     };
-    requestAnimationFrame(scan);
+    if ("BarcodeDetector" in window) {
+      const detector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
+      status.textContent = ui("Сканирую... держи код в рамке.", "Scanning... keep the code in frame.");
+      const scan = async () => {
+        if (!active || !document.body.contains(video)) return;
+        try {
+          const codes = await detector.detect(video);
+          if (codes.length) {
+            await onCode(codes[0].rawValue);
+            return;
+          }
+        } catch {
+          status.textContent = ui("Не могу распознать кадр. Попробуй ярче осветить упаковку.", "Cannot read this frame. Try better lighting.");
+        }
+        requestAnimationFrame(scan);
+      };
+      requestAnimationFrame(scan);
+      return;
+    }
+    status.textContent = ui("Включаю совместимый сканер для Android...", "Starting Android-compatible scanner...");
+    barcodeControls = await scanBarcodeWithZxing(video, () => active, onCode, status);
   } catch {
     status.textContent = ui("Не получил доступ к камере. Можно ввести код вручную.", "Camera access failed. You can enter the code manually.");
+  }
+}
+
+async function scanBarcodeWithZxing(video, isActive, onCode, status) {
+  try {
+    const zxing = await import("https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/+esm");
+    const reader = new zxing.BrowserMultiFormatReader();
+    const controls = await reader.decodeFromVideoElement(video, (result) => {
+      if (!isActive()) return;
+      const code = result?.getText?.() || result?.text;
+      if (code) onCode(code);
+    });
+    status.textContent = ui("Сканирую в совместимом режиме... держи штрихкод в кадре.", "Scanning in compatible mode... keep the barcode in frame.");
+    return controls;
+  } catch {
+    status.textContent = ui("Автосканер не запустился. Введи штрихкод вручную в поле ниже.", "Auto scanner failed. Enter the barcode manually below.");
+    return null;
   }
 }
 
@@ -1270,15 +1668,32 @@ function normalizeText(value) {
   return String(value || "").trim().toLowerCase().replace(/ё/g, "е");
 }
 
+function handlePhotoPicked(event) {
+  const cameraInput = document.querySelector("#photo-camera-input");
+  const galleryInput = document.querySelector("#photo-gallery-input");
+  const label = document.querySelector("#photo-file-name");
+  if (event.target === cameraInput && galleryInput) galleryInput.value = "";
+  if (event.target === galleryInput && cameraInput) cameraInput.value = "";
+  const file = event.target.files?.[0];
+  if (label && file) {
+    label.textContent = `${ui("Выбрано", "Selected")}: ${file.name || ui("новое фото", "new photo")}`;
+  }
+}
+
+function selectedPhotoFile() {
+  return document.querySelector("#photo-camera-input")?.files?.[0]
+    || document.querySelector("#photo-gallery-input")?.files?.[0]
+    || null;
+}
+
 async function analyzePhoto() {
-  const input = document.querySelector("#photo-input");
+  const file = selectedPhotoFile();
   const note = document.querySelector("#photo-note").value.trim();
   const out = document.querySelector("#photo-result");
-  if (!input.files?.[0]) {
-    toast("Выбери фото блюда");
+  if (!file) {
+    toast(ui("Сфоткай блюдо или выбери фото", "Take or choose a photo"));
     return;
   }
-  const file = input.files[0];
   const preview = URL.createObjectURL(file);
   out.innerHTML = `<img class="photo-preview" src="${preview}" alt="Фото блюда" /><div class="card">Анализирую...</div>`;
 
@@ -1382,10 +1797,26 @@ function saveProfile(event) {
     weight: Number(form.get("weight")),
     targetWeight: Number(form.get("targetWeight")),
     planDays: Number(form.get("planDays")),
+    waterTarget: Number(form.get("waterTarget") || 2500),
     activity: form.get("activity"),
-    goal: form.get("goal")
+    goal: form.get("goal"),
+    manualTargets: {
+      enabled: form.get("manualEnabled") === "on",
+      kcal: Number(form.get("manualKcal") || 0),
+      protein: Number(form.get("manualProtein") || 0),
+      fat: Number(form.get("manualFat") || 0),
+      carbs: Number(form.get("manualCarbs") || 0)
+    }
   };
   profile.targets = calcTargets(profile);
+  if (profile.manualTargets.enabled) {
+    profile.targets = {
+      kcal: profile.manualTargets.kcal,
+      protein: profile.manualTargets.protein,
+      fat: profile.manualTargets.fat,
+      carbs: profile.manualTargets.carbs
+    };
+  }
   state.profile = profile;
   state.language = profile.language;
   state.account.name = profile.accountName || state.account.name;
@@ -1523,7 +1954,11 @@ function openSettings() {
         <label>Food API endpoint</label>
         <input name="foodEndpoint" value="${escapeAttr(state.settings.foodEndpoint || "")}" placeholder="https://your-worker.example.workers.dev/food" />
       </div>
-      <p class="mini-note">OpenAI API key нельзя хранить в GitHub Pages. Endpoint должен быть маленьким backend/worker, который держит ключ на сервере. Food endpoint подключает внешнюю товарную базу без CORS.</p>
+      <div class="field">
+        <label>Subscription endpoint</label>
+        <input name="subscriptionEndpoint" value="${escapeAttr(state.settings.subscriptionEndpoint || "")}" placeholder="https://your-telegram-worker.workers.dev/subscription" />
+      </div>
+      <p class="mini-note">OpenAI API key нельзя хранить в GitHub Pages. Endpoint должен быть backend/worker. Food endpoint подключает товарную базу, Subscription endpoint отправляет счета Telegram Stars.</p>
       <button class="button">Сохранить</button>
     </form>
   `);
@@ -1531,10 +1966,13 @@ function openSettings() {
     event.preventDefault();
     const endpoint = new FormData(event.target).get("endpoint").trim();
     const foodEndpoint = new FormData(event.target).get("foodEndpoint").trim();
+    const subscriptionEndpoint = new FormData(event.target).get("subscriptionEndpoint").trim();
     state.settings.aiEndpoint = endpoint;
     state.settings.foodEndpoint = foodEndpoint;
+    state.settings.subscriptionEndpoint = subscriptionEndpoint;
     localStorage.setItem("elite_ai_endpoint", endpoint);
     localStorage.setItem("elite_food_endpoint", foodEndpoint);
+    localStorage.setItem("elite_subscription_endpoint", subscriptionEndpoint);
     saveState();
     closeModal();
     toast("Настройки сохранены");
@@ -1608,3 +2046,4 @@ function escapeAttr(value) {
 
 document.body.insertAdjacentHTML("afterbegin", document.querySelector("#icon-sprite").innerHTML);
 setTimeout(render, 260);
+setTimeout(syncSubscription, 1200);

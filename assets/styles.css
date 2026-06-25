@@ -174,6 +174,43 @@ button {
   line-height: 1.45;
 }
 
+.hero-subline {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  padding-top: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.hero-subline span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.hero-subline button,
+.title-actions .pill,
+.calendar-nav button,
+.water-actions button,
+.subscription-actions button,
+.calendar-shortcuts button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.hero-subline button {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
 .ring {
   width: 128px;
   aspect-ratio: 1;
@@ -261,6 +298,168 @@ button {
   font-weight: 800;
 }
 
+.compact-panel,
+.subscription-gate,
+.subscription-panel {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 14px;
+  margin-top: 12px;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.16);
+}
+
+.compact-panel span,
+.subscription-panel span,
+.subscription-gate span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.compact-panel strong,
+.subscription-panel strong,
+.subscription-gate strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 18px;
+}
+
+.water-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  margin: 12px 0;
+}
+
+.water-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--cyan), var(--green));
+}
+
+.water-actions,
+.subscription-actions,
+.calendar-shortcuts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.water-actions button,
+.subscription-actions button,
+.calendar-shortcuts button {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.snack-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.snack-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.snack-list button {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  text-align: left;
+}
+
+.snack-list button span,
+.snack-list button em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.snack-list button span {
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.snack-list button em,
+.snack-list p {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.subscription-gate {
+  background:
+    linear-gradient(135deg, rgba(255, 206, 103, 0.14), rgba(255, 111, 145, 0.09)),
+    rgba(255, 255, 255, 0.05);
+}
+
+.subscription-gate button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 14px;
+  padding: 0 14px;
+  margin-top: 12px;
+  color: #06110d;
+  background: linear-gradient(135deg, var(--amber), var(--green));
+  font-weight: 950;
+}
+
+.subscription-panel {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 206, 103, 0.1), rgba(65, 215, 255, 0.08)),
+    rgba(255, 255, 255, 0.05);
+}
+
+.subscription-panel p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.subscription-actions button:last-child {
+  border-color: rgba(255, 206, 103, 0.32);
+  color: var(--amber);
+}
+
+.promo-form {
+  display: grid;
+  gap: 6px;
+}
+
+.promo-form label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.promo-form div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.promo-form input {
+  min-width: 0;
+}
+
 .macro.over em {
   color: var(--rose);
 }
@@ -327,11 +526,107 @@ button {
   font-size: 12px;
 }
 
+.title-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.title-actions .pill {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
 .day-strip {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 6px;
   margin: 0 0 12px;
+}
+
+.calendar-nav {
+  display: grid;
+  grid-template-columns: 86px 1fr 86px;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 10px;
+}
+
+.calendar-nav strong {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.calendar-nav button {
+  min-height: 36px;
+}
+
+.month-calendar {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.month-calendar-head {
+  display: grid;
+  grid-template-columns: 42px 1fr 42px;
+  gap: 8px;
+  align-items: center;
+}
+
+.month-calendar-head strong {
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.month-calendar-head button,
+.month-grid button {
+  min-height: 38px;
+}
+
+.month-weekdays,
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.month-weekdays span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.month-grid button {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.month-grid button.active {
+  border-color: rgba(92, 255, 169, 0.72);
+  background: rgba(92, 255, 169, 0.15);
+}
+
+.month-grid button em {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--green);
+  color: #06110d;
+  font-size: 9px;
+  font-style: normal;
+  line-height: 14px;
 }
 
 .day-chip {
@@ -552,6 +847,28 @@ button {
 .form-section-head strong {
   display: block;
   font-size: 15px;
+}
+
+.toggle-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.toggle-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--green);
+}
+
+.toggle-row span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 850;
 }
 
 .profile-block-title {
@@ -1093,6 +1410,21 @@ button {
   gap: 10px;
 }
 
+.photo-source-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .photo-preview {
   width: 100%;
   aspect-ratio: 4 / 3;
@@ -1465,6 +1797,14 @@ button {
   .quick-picks,
   .quick-picks {
     grid-template-columns: 1fr;
+  }
+
+  .snack-list {
+    grid-template-columns: 1fr;
+  }
+
+  .section-title {
+    align-items: flex-start;
   }
 
   .measurement-guide svg {
